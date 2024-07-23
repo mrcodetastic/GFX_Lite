@@ -1,4 +1,4 @@
-⁹# GFX_Lite
+# GFX_Lite
 A slimmed-down version of AdaFruit_GFX and FastLED combined together to make a simple to use graphics library that supports 24bpp colour.
 
 The root/core graphics primitive functions extracted from the Adafruit GFX Library. Originally created by [Jean-Marc Zingg] (https://github.com/ZinggJM/GFX_Root).
@@ -16,7 +16,7 @@ Simply compile the ESP32-HUB75-MatrixPanel-DMA library with the compile-time fla
 
 * FastLED doesn't even compile on ESP32 (as of June 2024) because of ESP-IDF hardware support changes, and given this library has hardware peripheral stuff removed, it compiles without issue. 
 
-* This merged library includes all the draw routines from AdaFruit GFX and additionally enables the use of these with FastLED's CRGB (24bpp) colours.
+* This merged library includes all the draw routines from AdaFruit GFX and additionally enables the use of these with FastLED's CRGB (24bpp) colour struct.
 
 * The overall code size is a lot smaller.
 
