@@ -12,9 +12,9 @@ Simply compile the ESP32-HUB75-MatrixPanel-DMA library with the compile-time fla
 
 ## Benefits over using FastLED + AdaFruit GFX
 
-* FastLED and AdaFruit GFX include a lot of code for specific architectures or display devices, given their primary use as libraries to control displays or long strings of LEDs. As a result, there’s a lot of ‘bloat’ that is not of use if just wanting to use these libraries to draw pixels to a basic LED Matrix Panel.
+* FastLED and AdaFruit GFX include a lot of code for specific hardware platforms given their use as libraries to control displays or long strings of LEDs. But as a result, there’s a lot of ‘bloat' and compile time warnings. In certain cases these libraries fail to compile at all (i.e. FastLED on the ESP32S3).
 
-* FastLED doesn't even compile on ESP32 (as of June 2024) because of ESP-IDF hardware support changes, and given this library has hardware peripheral stuff removed, it compiles without issue. 
+* This merged library takes all the drawing functions and strips out the hardware specific junk, so you are free to implement this library on whatever device you want.
 
 * This merged library includes all the draw routines from AdaFruit GFX and additionally enables the use of these with FastLED's CRGB (24bpp) colour struct.
 
