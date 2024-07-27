@@ -38,7 +38,7 @@ GFX_LayerCompositor gfx_compositor(mbi_set_pixel);
 
 // Draw stuff to the 'foreground layer'
 gfx_layer_fg.clear();            
-gfx_layer_fg.drawCentreText("COOOL!", MIDDLE, &FreeSansBold9pt7b, CRGB(252,36,28));
+gfx_layer_fg.drawCentreText("COOOL!", MIDDLE, &FreeSansBold9pt7b, CRGB(254,254,254));
 gfx_layer_fg.autoCenterX(); // because I don't trust AdaFruit to perfectly place the contents in the middle
 
 // Draw a red background to the background layer
