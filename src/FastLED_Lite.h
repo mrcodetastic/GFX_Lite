@@ -1,5 +1,8 @@
 #pragma once
 
+// Define this in case programs need it.
+#define FASTLED_VERSION 3007000
+
 #define FASTLED_USING_NAMESPACE
 #define FASTLED_NAMESPACE_BEGIN
 #define FASTLED_NAMESPACE_END

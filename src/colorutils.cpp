@@ -409,7 +409,7 @@ CHSV* blend( const CHSV* src1, const CHSV* src2, CHSV* dest, uint16_t count, fra
 
 /// Forward declaration of the function "XY" which must be provided by
 /// the application for use in two-dimensional filter functions.
-uint16_t XY( uint8_t, uint8_t);// __attribute__ ((weak));
+uint16_t XY( uint16_t, uint16_t);// __attribute__ ((weak));
 
 
 // blur1d: one-dimensional blur filter. Spreads light to 2 line neighbors.
@@ -442,13 +442,13 @@ void blur1d( CRGB* leds, uint16_t numLeds, fract8 blur_amount)
     }
 }
 
-void blur2d( CRGB* leds, uint8_t width, uint8_t height, fract8 blur_amount)
+void blur2d( CRGB* leds, uint16_t width, uint16_t height, fract8 blur_amount)
 {
     blurRows(leds, width, height, blur_amount);
     blurColumns(leds, width, height, blur_amount);
 }
 
-void blurRows( CRGB* leds, uint8_t width, uint8_t height, fract8 blur_amount)
+void blurRows( CRGB* leds, uint16_t width, uint16_t height, fract8 blur_amount)
 {
 /*    for( uint8_t row = 0; row < height; row++) {
         CRGB* rowbase = leds + (row * width);
@@ -458,9 +458,9 @@ void blurRows( CRGB* leds, uint8_t width, uint8_t height, fract8 blur_amount)
     // blur rows same as columns, for irregular matrix
     uint8_t keep = 255 - blur_amount;
     uint8_t seep = blur_amount >> 1;
-    for( uint8_t row = 0; row < height; row++) {
+    for( uint16_t row = 0; row < height; row++) {
         CRGB carryover = CRGB::Black;
-        for( uint8_t i = 0; i < width; i++) {
+        for( uint16_t i = 0; i < width; i++) {
             CRGB cur = leds[XY(i,row)];
             CRGB part = cur;
             part.nscale8( seep);
@@ -474,7 +474,7 @@ void blurRows( CRGB* leds, uint8_t width, uint8_t height, fract8 blur_amount)
 }
 
 // blurColumns: perform a blur1d on each column of a rectangular matrix
-void blurColumns(CRGB* leds, uint8_t width, uint8_t height, fract8 blur_amount)
+void blurColumns(CRGB* leds, uint16_t width, uint16_t height, fract8 blur_amount)
 {
     // blur columns
     uint8_t keep = 255 - blur_amount;
