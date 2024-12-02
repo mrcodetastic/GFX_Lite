@@ -23,6 +23,20 @@
 
 #define BLACK_BACKGROUND_PIXEL_COLOUR CRGB(0,0,0)
 
+// For ESP32
+#define USE_ESP32_PSRAM
+
+
+#ifdef USE_ESP32_PSRAM
+
+    #if !defined(ESP_DMA_MALLOC_FLAG_PSRAM)
+        #define ESP_DMA_MALLOC_FLAG_PSRAM        BIT(0)
+    #endif
+    // New dma helper tools
+ //   #include "include/esp_dma_utils.h"
+#endif
+
+
 enum textPosition { TOP, MIDDLE, BOTTOM };
 
 /* To help with direct pixel referencing by width and height */
@@ -45,11 +59,36 @@ class GFX_Layer : public GFX
             pixels = new layerPixels();
             pixels->width = _width;
             pixels->height = _height;
+
+#ifdef USE_ESP32_PSRAM
+
+            size_t actual_size = 0;
+
+            ESP_LOGI(TAG, "Allocating PSRAM DMA memory for pixel layer buffer.");
+            esp_err_t err = esp_dma_calloc(sizeof(CRGB)*_height, ESP_DMA_MALLOC_FLAG_PSRAM, (void **) &pixels->data, &actual_size);
+            assert(err == ESP_OK);
+
+            for (int i = 0; i < _height; i++) {
+                // pixels->data[i] = new CRGB[_width];
+                esp_err_t err = esp_dma_calloc(sizeof(CRGB)*_width, ESP_DMA_MALLOC_FLAG_PSRAM, (void **) &pixels->data[i], &actual_size);
+                assert(err == ESP_OK);
+
+                size_t alignment_offset = actual_size - alloc_size;
+
+                ESP_LOGI(TAG, "Actual size is: %d bytes", actual_size);
+                ESP_LOGI(TAG, "Alignment offset is: %d ", alignment_offset);
+            }
+
+#else
             pixels->data = new CRGB*[_height];
             for (int i = 0; i < _height; i++) {
                 pixels->data[i] = new CRGB[_width];
             }
-            Serial.printf("Allocated memory for layerPixels: %d x %d\r\n", _width, _height);
+            Serial.printf("Allocated SRAM memory for layerPixels: %d x %d\r\n", _width, _height);
+
+
+#endif
+
         }
 
         void drawPixel(int16_t x, int16_t y, CRGB color) {				// overwrite GFX_Lite implementation	
