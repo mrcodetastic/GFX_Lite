@@ -49,7 +49,7 @@ class GFX_Layer : public GFX
             for (int i = 0; i < _height; i++) {
                 pixels->data[i] = new CRGB[_width];
             }
-            Serial.printf("Allocated memory for layerPixels: %d x %d\r\n", _width, _height);
+            //Serial.printf("Allocated memory for layerPixels: %d x %d\r\n", _width, _height);
         }
 
         void drawPixel(int16_t x, int16_t y, CRGB color) {				// overwrite GFX_Lite implementation	
