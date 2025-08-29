@@ -132,6 +132,18 @@ GFX::GFX(int16_t w, int16_t h) : WIDTH(w), HEIGHT(h)
 /**************************************************************************/
 void GFX::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, CRGB color)
 {
+  // Bounds checking and clipping
+  if (x >= _width || y >= _height) return;
+  if (x + w < 0 || y + h < 0) return;
+  
+  // Clip to screen bounds
+  if (x < 0) { w += x; x = 0; }
+  if (y < 0) { h += y; y = 0; }
+  if (x + w > _width) { w = _width - x; }
+  if (y + h > _height) { h = _height - y; }
+  
+  if (w <= 0 || h <= 0) return;
+  
   for (int16_t i = x; i < x + w; i++)
   {
     for (int16_t j = y; j < y + h; j++)
@@ -143,6 +155,18 @@ void GFX::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, CRGB color)
 
 void GFX::fillRect(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color)
 {
+  // Bounds checking and clipping
+  if (x >= _width || y >= _height) return;
+  if (x + w < 0 || y + h < 0) return;
+  
+  // Clip to screen bounds
+  if (x < 0) { w += x; x = 0; }
+  if (y < 0) { h += y; y = 0; }
+  if (x + w > _width) { w = _width - x; }
+  if (y + h > _height) { h = _height - y; }
+  
+  if (w <= 0 || h <= 0) return;
+  
   for (int16_t i = x; i < x + w; i++)
   {
     for (int16_t j = y; j < y + h; j++)

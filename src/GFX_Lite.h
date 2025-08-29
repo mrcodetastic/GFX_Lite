@@ -237,12 +237,51 @@ class GFX : public Print
 
     /************************************************************************/
     /*!
-      @brief      Takes a CRGB 24bit color
+      @brief      Takes a CRGB 24bit color and converts to 16-bit 565 format
+      @param      c   CRGB color to convert
       @returns    16-bit packed 565 color
     */
     /************************************************************************/
-    inline uint16_t CRGB_to_color565(CRGB c) {
+    inline uint16_t CRGB_to_color565(CRGB c) const __attribute__((always_inline)) {
       return ((c.r & 0xF8) << 8) | ((c.g & 0xFC) << 3) | (c.b >> 3);
+    }
+
+    /************************************************************************/
+    /*!
+      @brief      Takes a 16-bit 565 color and converts to 24-bit CRGB
+      @param      color   16-bit 565 color to convert
+      @returns    24-bit CRGB color
+    */
+    /************************************************************************/
+    inline CRGB color565_to_CRGB(uint16_t color) const __attribute__((always_inline)) {
+      uint8_t r = ((color >> 11) & 0x1F) << 3;  // 5 bits to 8 bits
+      uint8_t g = ((color >> 5) & 0x3F) << 2;   // 6 bits to 8 bits  
+      uint8_t b = (color & 0x1F) << 3;          // 5 bits to 8 bits
+      
+      // Improve accuracy by setting the lower bits
+      r |= r >> 5;
+      g |= g >> 6;
+      b |= b >> 5;
+      
+      return CRGB(r, g, b);
+    }
+
+    /************************************************************************/
+    /*!
+      @brief      Fast color blending function
+      @param      a   First color
+      @param      b   Second color  
+      @param      alpha   Blend amount (0-255)
+      @returns    Blended color
+    */
+    /************************************************************************/
+    inline CRGB blendColors(CRGB a, CRGB b, uint8_t alpha) const __attribute__((always_inline)) {
+      uint8_t inv_alpha = 255 - alpha;
+      return CRGB(
+        (a.r * inv_alpha + b.r * alpha) >> 8,
+        (a.g * inv_alpha + b.g * alpha) >> 8,
+        (a.b * inv_alpha + b.b * alpha) >> 8
+      );
     }
 
 

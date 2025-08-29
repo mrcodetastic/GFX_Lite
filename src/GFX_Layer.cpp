@@ -197,10 +197,186 @@ void GFX_Layer::drawCentreText(const char *buf, textPosition textPos, const GFXf
 	// Not implemented
   }
 
+// Advanced layer operations implementations
+void GFX_Layer::fastFillRect(int16_t x, int16_t y, int16_t w, int16_t h, CRGB color) {
+    // Bounds checking and clipping
+    if (x >= _width || y >= _height) return;
+    if (x + w < 0 || y + h < 0) return;
+    
+    // Clip to layer bounds
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > _width) { w = _width - x; }
+    if (y + h > _height) { h = _height - y; }
+    
+    if (w <= 0 || h <= 0) return;
+    
+    // Use memset for single-row fills when possible
+    for (int16_t j = y; j < y + h; j++) {
+        for (int16_t i = x; i < x + w; i++) {
+            pixels->data[j][i] = color;
+        }
+    }
+}
+
+void GFX_Layer::fastFillScreen(CRGB color) {
+    // Use the contiguous memory for faster fills
+    if (pixels->contiguous_memory) {
+        for (int i = 0; i < _width * _height; i++) {
+            pixels->contiguous_memory[i] = color;
+        }
+    } else {
+        // Fallback to row-by-row
+        for (int y = 0; y < _height; y++) {
+            for (int x = 0; x < _width; x++) {
+                pixels->data[y][x] = color;
+            }
+        }
+    }
+}
+
+void GFX_Layer::scrollX(int16_t pixels_to_scroll, CRGB fill_color) {
+    if (pixels_to_scroll == 0) return;
+    
+    if (pixels_to_scroll > 0) {
+        // Scroll right
+        for (int y = 0; y < _height; y++) {
+            // Move existing pixels
+            for (int x = _width - 1; x >= pixels_to_scroll; x--) {
+                pixels->data[y][x] = pixels->data[y][x - pixels_to_scroll];
+            }
+            // Fill left side with fill color
+            for (int x = 0; x < pixels_to_scroll && x < _width; x++) {
+                pixels->data[y][x] = fill_color;
+            }
+        }
+    } else {
+        // Scroll left
+        pixels_to_scroll = -pixels_to_scroll;
+        for (int y = 0; y < _height; y++) {
+            // Move existing pixels
+            for (int x = 0; x < _width - pixels_to_scroll; x++) {
+                pixels->data[y][x] = pixels->data[y][x + pixels_to_scroll];
+            }
+            // Fill right side with fill color
+            for (int x = _width - pixels_to_scroll; x < _width; x++) {
+                pixels->data[y][x] = fill_color;
+            }
+        }
+    }
+}
+
+void GFX_Layer::scrollY(int16_t pixels_to_scroll, CRGB fill_color) {
+    if (pixels_to_scroll == 0) return;
+    
+    if (pixels_to_scroll > 0) {
+        // Scroll down
+        for (int y = _height - 1; y >= pixels_to_scroll; y--) {
+            for (int x = 0; x < _width; x++) {
+                pixels->data[y][x] = pixels->data[y - pixels_to_scroll][x];
+            }
+        }
+        // Fill top with fill color
+        for (int y = 0; y < pixels_to_scroll && y < _height; y++) {
+            for (int x = 0; x < _width; x++) {
+                pixels->data[y][x] = fill_color;
+            }
+        }
+    } else {
+        // Scroll up
+        pixels_to_scroll = -pixels_to_scroll;
+        for (int y = 0; y < _height - pixels_to_scroll; y++) {
+            for (int x = 0; x < _width; x++) {
+                pixels->data[y][x] = pixels->data[y + pixels_to_scroll][x];
+            }
+        }
+        // Fill bottom with fill color
+        for (int y = _height - pixels_to_scroll; y < _height; y++) {
+            for (int x = 0; x < _width; x++) {
+                pixels->data[y][x] = fill_color;
+            }
+        }
+    }
+}
+
+void GFX_Layer::adjustBrightness(uint8_t scale) {
+    if (pixels->contiguous_memory) {
+        for (int i = 0; i < _width * _height; i++) {
+            pixels->contiguous_memory[i].nscale8(scale);
+        }
+    } else {
+        for (int y = 0; y < _height; y++) {
+            for (int x = 0; x < _width; x++) {
+                pixels->data[y][x].nscale8(scale);
+            }
+        }
+    }
+}
+
+CRGB GFX_Layer::getAverageColor() const {
+    uint32_t total_r = 0, total_g = 0, total_b = 0;
+    uint32_t pixel_count = _width * _height;
+    
+    if (pixels->contiguous_memory) {
+        for (int i = 0; i < pixel_count; i++) {
+            total_r += pixels->contiguous_memory[i].r;
+            total_g += pixels->contiguous_memory[i].g;
+            total_b += pixels->contiguous_memory[i].b;
+        }
+    } else {
+        for (int y = 0; y < _height; y++) {
+            for (int x = 0; x < _width; x++) {
+                total_r += pixels->data[y][x].r;
+                total_g += pixels->data[y][x].g;
+                total_b += pixels->data[y][x].b;
+            }
+        }
+    }
+    
+    return CRGB(total_r / pixel_count, total_g / pixel_count, total_b / pixel_count);
+}
+
+void GFX_Layer::blur(uint8_t blur_amount) {
+    if (blur_amount == 0) return;
+    
+    // Simple box blur implementation
+    // Note: This is a basic implementation. For better results, consider Gaussian blur
+    for (int y = 1; y < _height - 1; y++) {
+        for (int x = 1; x < _width - 1; x++) {
+            uint16_t r = 0, g = 0, b = 0;
+            uint8_t count = 0;
+            
+            // Sample 3x3 neighborhood
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    r += pixels->data[y + dy][x + dx].r;
+                    g += pixels->data[y + dy][x + dx].g;
+                    b += pixels->data[y + dy][x + dx].b;
+                    count++;
+                }
+            }
+            
+            CRGB blurred(r / count, g / count, b / count);
+            CRGB original = pixels->data[y][x];
+            
+            // Blend based on blur_amount
+            pixels->data[y][x] = blend(original, blurred, blur_amount);
+        }
+    }
+}
+
 
 GFX_Layer::~GFX_Layer(void)
 {
-  free(pixels);
+  if (pixels) {
+    if (pixels->contiguous_memory) {
+      delete[] pixels->contiguous_memory;
+    }
+    if (pixels->data) {
+      delete[] pixels->data;
+    }
+    delete pixels;
+  }
 }
 	
 
@@ -299,5 +475,98 @@ void GFX_LayerCompositor::Blend(GFX_Layer &_bgLayer, GFX_Layer &_fgLayer, uint8_
 
 
 
-} // end blend
+&} // end blend
+
+
+// Advanced blending function implementation
+CRGB GFX_LayerCompositor::blendPixels(CRGB base, CRGB overlay, BlendMode mode, uint8_t opacity) {
+    if (opacity == 0) return base;
+    if (opacity == 255 && mode == BLEND_NORMAL) return overlay;
+    
+    CRGB result;
+    
+    switch (mode) {
+        case BLEND_NORMAL:
+            result = overlay;
+            break;
+            
+        case BLEND_MULTIPLY:
+            result.r = (base.r * overlay.r) / 255;
+            result.g = (base.g * overlay.g) / 255;
+            result.b = (base.b * overlay.b) / 255;
+            break;
+            
+        case BLEND_SCREEN:
+            result.r = 255 - ((255 - base.r) * (255 - overlay.r)) / 255;
+            result.g = 255 - ((255 - base.g) * (255 - overlay.g)) / 255;
+            result.b = 255 - ((255 - base.b) * (255 - overlay.b)) / 255;
+            break;
+            
+        case BLEND_DARKEN:
+            result.r = min(base.r, overlay.r);
+            result.g = min(base.g, overlay.g);
+            result.b = min(base.b, overlay.b);
+            break;
+            
+        case BLEND_LIGHTEN:
+            result.r = max(base.r, overlay.r);
+            result.g = max(base.g, overlay.g);
+            result.b = max(base.b, overlay.b);
+            break;
+            
+        case BLEND_DIFFERENCE:
+            result.r = abs(base.r - overlay.r);
+            result.g = abs(base.g - overlay.g);
+            result.b = abs(base.b - overlay.b);
+            break;
+            
+        default:
+            result = overlay; // fallback to normal blend
+            break;
+    }
+    
+    // Apply opacity
+    if (opacity < 255) {
+        result = blend(base, result, opacity);
+    }
+    
+    return result;
+}
+
+void GFX_LayerCompositor::BlendAdvanced(GFX_Layer &_bgLayer, GFX_Layer &_fgLayer, BlendMode mode, uint8_t opacity) {
+    for (int y = 0; y < min(_bgLayer.getHeight(), _fgLayer.getHeight()); y++) {
+        for (int x = 0; x < min(_bgLayer.getWidth(), _fgLayer.getWidth()); x++) {
+            CRGB base = _bgLayer.pixels->data[y][x];
+            CRGB overlay = _fgLayer.pixels->data[y][x];
+            
+            // Skip transparent pixels in foreground layer if transparency is enabled
+            if (_fgLayer.transparency_enabled && overlay == _fgLayer.transparency_colour) {
+                callback(x, y, base.r, base.g, base.b);
+                continue;
+            }
+            
+            CRGB result = blendPixels(base, overlay, mode, opacity);
+            callback(x, y, result.r, result.g, result.b);
+        }
+    }
+}
+
+void GFX_LayerCompositor::Mask(GFX_Layer &_bgLayer, GFX_Layer &_fgLayer, GFX_Layer &_maskLayer) {
+    int max_width = min(min(_bgLayer.getWidth(), _fgLayer.getWidth()), _maskLayer.getWidth());
+    int max_height = min(min(_bgLayer.getHeight(), _fgLayer.getHeight()), _maskLayer.getHeight());
+    
+    for (int y = 0; y < max_height; y++) {
+        for (int x = 0; x < max_width; x++) {
+            CRGB base = _bgLayer.pixels->data[y][x];
+            CRGB overlay = _fgLayer.pixels->data[y][x];
+            CRGB mask = _maskLayer.pixels->data[y][x];
+            
+            // Use mask luminance as alpha
+            uint8_t alpha = (mask.r + mask.g + mask.b) / 3;
+            CRGB result = blend(base, overlay, alpha);
+            
+            callback(x, y, result.r, result.g, result.b);
+        }
+    }
+}
 
