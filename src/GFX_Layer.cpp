@@ -475,7 +475,7 @@ void GFX_LayerCompositor::Blend(GFX_Layer &_bgLayer, GFX_Layer &_fgLayer, uint8_
 
 
 
-&} // end blend
+} // end blend
 
 
 // Advanced blending function implementation

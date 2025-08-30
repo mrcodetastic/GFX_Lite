@@ -19,6 +19,7 @@
 #define DISPLAY_MATRIX_LAYER
 
 #include <functional>
+#include <new>
 #include "GFX_Lite.h"
 
 #define BLACK_BACKGROUND_PIXEL_COLOUR CRGB(0,0,0)
@@ -63,32 +64,40 @@ class GFX_Layer : public GFX
 
         inline bool init()
         {
-            try {
-                pixels = new layerPixels();
-                pixels->width = _width;
-                pixels->height = _height;
-                
-                // Allocate contiguous memory for better cache performance
-                CRGB* contiguous_data = new CRGB[_width * _height];
-                pixels->data = new CRGB*[_height];
-                
-                for (int i = 0; i < _height; i++) {
-                    pixels->data[i] = &contiguous_data[i * _width];
-                }
-                
-                // Store the contiguous pointer for cleanup
-                pixels->contiguous_memory = contiguous_data;
-                
-                //Serial.printf("Allocated memory for layerPixels: %d x %d\r\n", _width, _height);
-                return true;
-            } catch (...) {
-                // Handle allocation failure
-                if (pixels) {
-                    delete pixels;
-                    pixels = nullptr;
-                }
+            // Attempt to allocate layerPixels structure
+            pixels = new(std::nothrow) layerPixels();
+            if (!pixels) {
                 return false;
             }
+            
+            pixels->width = _width;
+            pixels->height = _height;
+            
+            // Allocate contiguous memory for better cache performance
+            CRGB* contiguous_data = new(std::nothrow) CRGB[_width * _height];
+            if (!contiguous_data) {
+                delete pixels;
+                pixels = nullptr;
+                return false;
+            }
+            
+            pixels->data = new(std::nothrow) CRGB*[_height];
+            if (!pixels->data) {
+                delete[] contiguous_data;
+                delete pixels;
+                pixels = nullptr;
+                return false;
+            }
+            
+            for (int i = 0; i < _height; i++) {
+                pixels->data[i] = &contiguous_data[i * _width];
+            }
+            
+            // Store the contiguous pointer for cleanup
+            pixels->contiguous_memory = contiguous_data;
+            
+            //Serial.printf("Allocated memory for layerPixels: %d x %d\r\n", _width, _height);
+            return true;
         }
 
         void drawPixel(int16_t x, int16_t y, CRGB color) {				// overwrite GFX_Lite implementation	
