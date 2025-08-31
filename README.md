@@ -112,9 +112,6 @@ The new contiguous memory allocation provides ~30% better performance for large 
 | `BLEND_MULTIPLY` | Darkening | Shadows, color burns |
 | `BLEND_SCREEN` | Lightening | Highlights, glows |
 | `BLEND_OVERLAY` | Contrast | Dramatic effects |
-| `BLEND_DARKEN` | Keep darker pixels | Masking |
-| `BLEND_LIGHTEN` | Keep lighter pixels | Highlighting |
-| `BLEND_DIFFERENCE` | Absolute difference | Special effects |
 
 ## Examples
 

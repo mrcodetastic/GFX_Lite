@@ -502,22 +502,19 @@ CRGB GFX_LayerCompositor::blendPixels(CRGB base, CRGB overlay, BlendMode mode, u
             result.b = 255 - ((255 - base.b) * (255 - overlay.b)) / 255;
             break;
             
-        case BLEND_DARKEN:
-            result.r = min(base.r, overlay.r);
-            result.g = min(base.g, overlay.g);
-            result.b = min(base.b, overlay.b);
-            break;
-            
-        case BLEND_LIGHTEN:
-            result.r = max(base.r, overlay.r);
-            result.g = max(base.g, overlay.g);
-            result.b = max(base.b, overlay.b);
-            break;
-            
-        case BLEND_DIFFERENCE:
-            result.r = abs(base.r - overlay.r);
-            result.g = abs(base.g - overlay.g);
-            result.b = abs(base.b - overlay.b);
+        case BLEND_OVERLAY:
+            // Simple overlay implementation
+            for (int i = 0; i < 3; i++) {
+                uint8_t* base_c = (i == 0) ? &base.r : (i == 1) ? &base.g : &base.b;
+                uint8_t* overlay_c = (i == 0) ? &overlay.r : (i == 1) ? &overlay.g : &overlay.b;
+                uint8_t* result_c = (i == 0) ? &result.r : (i == 1) ? &result.g : &result.b;
+                
+                if (*base_c < 128) {
+                    *result_c = (2 * (*base_c) * (*overlay_c)) / 255;
+                } else {
+                    *result_c = 255 - (2 * (255 - *base_c) * (255 - *overlay_c)) / 255;
+                }
+            }
             break;
             
         default:

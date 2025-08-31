@@ -149,12 +149,12 @@ void demonstrateBlendModes() {
     
     // Change blend mode every 3 seconds
     if (millis() - last_blend_change > 3000) {
-        blend_mode_index = (blend_mode_index + 1) % 6;
+        blend_mode_index = (blend_mode_index + 1) % 4;
         last_blend_change = millis();
         
         // Print current blend mode
         const char* blend_names[] = {
-            "NORMAL", "MULTIPLY", "SCREEN", "DARKEN", "LIGHTEN", "DIFFERENCE"
+            "NORMAL", "MULTIPLY", "SCREEN", "OVERLAY"
         };
         Serial.printf("Blend mode: %s\n", blend_names[blend_mode_index]);
     }
@@ -163,9 +163,7 @@ void demonstrateBlendModes() {
         GFX_LayerCompositor::BLEND_NORMAL,
         GFX_LayerCompositor::BLEND_MULTIPLY,
         GFX_LayerCompositor::BLEND_SCREEN,
-        GFX_LayerCompositor::BLEND_DARKEN,
-        GFX_LayerCompositor::BLEND_LIGHTEN,
-        GFX_LayerCompositor::BLEND_DIFFERENCE
+        GFX_LayerCompositor::BLEND_OVERLAY
     };
     
     // Use advanced blending to composite layers

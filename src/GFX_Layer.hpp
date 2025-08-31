@@ -244,15 +244,7 @@ public:
         BLEND_NORMAL,
         BLEND_MULTIPLY,
         BLEND_SCREEN, 
-        BLEND_OVERLAY,
-        BLEND_SOFT_LIGHT,
-        BLEND_HARD_LIGHT,
-        BLEND_COLOR_DODGE,
-        BLEND_COLOR_BURN,
-        BLEND_DARKEN,
-        BLEND_LIGHTEN,
-        BLEND_DIFFERENCE,
-        BLEND_EXCLUSION
+        BLEND_OVERLAY
     };
 
 private:

@@ -88,10 +88,6 @@ compositor.AlphaComposite(background, foreground, alpha_value);
 - `BLEND_MULTIPLY` - Darkening effect
 - `BLEND_SCREEN` - Lightening effect
 - `BLEND_OVERLAY` - Contrast enhancement
-- `BLEND_DARKEN` - Keep darker pixels
-- `BLEND_LIGHTEN` - Keep lighter pixels
-- `BLEND_DIFFERENCE` - Absolute difference
-- `BLEND_EXCLUSION` - Similar to difference but lower contrast
 
 ## 🛡️ Safety and Error Handling
 
