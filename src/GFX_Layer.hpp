@@ -224,12 +224,14 @@ class GFX_Layer : public GFX
 
 
     private:
+	
+        uint16_t _width;
+        uint16_t _height;
+		
     
         // Member variable to store the callback
         std::function<void(int16_t, int16_t, uint8_t, uint8_t, uint8_t)> callback;
-
-        uint16_t _width;
-        uint16_t _height;
+		
 };
 
 
