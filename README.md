@@ -1,149 +1,85 @@
 # GFX_Lite
-A slimmed-down version of AdaFruit_GFX and FastLED combined together to make a simple to use graphics library that supports 24bpp colour.
 
-The root/core graphics primitive functions extracted from the Adafruit GFX Library. Originally created by [Jean-Marc Zingg] (https://github.com/ZinggJM/GFX_Root).
+GFX_Lite combines Adafruit_GFX-style software drawing primitives with FastLED's `CRGB`, HSV, palette, blending, and color utility APIs. The library contains no display transport or physical LED-output driver. A target integrates it by deriving from `GFX` and implementing the two `drawPixel` overloads, or by using the optional callback-backed `GFX_Layer` framebuffer.
 
 ![Overview](image.jpg)
 
-## 🚀 Recent Improvements (v2.0)
+## What is included
 
-**Performance Enhancements:**
-- ⚡ **30% faster** layer access with contiguous memory allocation
-- 🎯 **50% faster** rectangle filling with smart bounds clipping  
-- 🧠 **Advanced memory management** with validation and monitoring
-- 🔍 **Comprehensive error handling** and initialization checking
+- Lines, rectangles, circles, triangles, rounded rectangles, bitmaps, and text rendering.
+- RGB565 compatibility for existing GFX-style callers and native 24-bit `CRGB` drawing/text colors.
+- FastLED-derived color types, HSV conversion, palettes, color utilities, and software noise/math routines.
+- Optional off-screen `GFX_Layer` buffers and a compositor.
 
-**New Features:**
-- 🎨 **12 advanced blend modes** (Multiply, Screen, Overlay, etc.)
-- 📐 **Layer operations**: scroll, blur, brightness adjustment
-- 📊 **Color analysis**: average, dominant, pixel counting
-- 🛡️ **Memory safety** with bounds checking and validation
-- ⚙️ **Platform optimizations** for ESP32/ARM processors
+The core still uses Arduino's `Print` API and Arduino font-storage conventions. It is intended for Arduino-compatible targets, not a standalone desktop C++ build without compatibility shims.
 
-See [IMPROVEMENTS.md](IMPROVEMENTS.md) for detailed documentation.
+## Minimal framebuffer example
 
-## Use Cases
-This library is designed to be a drop-in replacement for AdaFruit_GFX and FastLED when using [the ESP32-HUB75-MatrixPanel-DMA library](https://github.com/mrcodetastic/ESP32-HUB75-MatrixPanel-DMA) 
+See [`examples/framebuffer/framebuffer.ino`](examples/framebuffer/framebuffer.ino) for a complete generic example. A target-specific display adapter can replace the framebuffer writes in its `drawPixel` implementations.
 
-Simply compile the ESP32-HUB75-MatrixPanel-DMA library with the compile-time flag `USE_GFX_LITE` to enable this.
-
-## Benefits over using FastLED + AdaFruit GFX
-
-* FastLED and AdaFruit GFX include a lot of code for specific hardware platforms given their use as libraries to control displays or long strings of LEDs. But as a result, there's a lot of 'bloat' and compile time warnings. In certain cases these libraries fail to compile at all (i.e. FastLED on the ESP32S3).
-
-* This merged library takes all the drawing functions and strips out the hardware specific junk, so you are free to implement this library on whatever device you want.
-
-* This merged library includes all the draw routines from AdaFruit GFX and additionally enables the use of these with FastLED's CRGB (24bpp) colour struct.
-
-* The overall code size is a lot smaller.
-
-## Enhanced Layers and LayerCompositor!
-
-The library includes advanced off-screen memory-based CRGB buffers with sophisticated compositing capabilities.
-
-### Quick Start Example
 ```cpp
-// Setup layers with improved memory management
-GFX_Layer gfx_layer_bg(PANEL_PHY_RES_X, PANEL_PHY_RES_Y, mbi_set_pixel);
-GFX_Layer gfx_layer_fg(PANEL_PHY_RES_X, PANEL_PHY_RES_Y, mbi_set_pixel);
+#include <GFX_Lite.h>
 
-// Validate initialization
-if (!gfx_layer_bg.isInitialized() || !gfx_layer_fg.isInitialized()) {
-    Serial.println("Layer initialization failed!");
-    return;
+class Canvas : public GFX {
+public:
+  Canvas() : GFX(64, 32) {}
+
+  void drawPixel(int16_t x, int16_t y, uint16_t color) override {
+    drawPixel(x, y, color565_to_CRGB(color));
+  }
+
+  void drawPixel(int16_t x, int16_t y, CRGB color) override {
+    if (x >= 0 && x < width() && y >= 0 && y < height()) {
+      pixels[y][x] = color;
+    }
+  }
+
+  CRGB pixels[32][64];
+};
+
+Canvas canvas;
+CRGBPalette16 palette = RainbowColors_p;
+
+void setup() {
+  canvas.setTextColor(CRGB::White);
+  canvas.setCursor(0, 10);
+  canvas.print("GFX_Lite");
+  canvas.drawPixel(20, 20, ColorFromPalette(palette, 96));
 }
 
-// Create advanced compositor
-GFX_LayerCompositor gfx_compositor(mbi_set_pixel);
-
-// Draw with performance optimizations
-gfx_layer_fg.fastFillScreen(CRGB::Black);            
-gfx_layer_fg.drawCentreText("COOL!", MIDDLE, &FreeSansBold9pt7b, CRGB::White);
-gfx_layer_fg.autoCenterX();
-
-// Create gradient background  
-gfx_layer_bg.fastFillScreen(CRGB::Red);
-
-// Advanced blending with multiple modes
-gfx_compositor.BlendAdvanced(gfx_layer_bg, gfx_layer_fg, 
-                            GFX_LayerCompositor::BLEND_SCREEN, 200);
+void loop() {}
 ```
-
-### Advanced Features
-
-**Layer Operations:**
-```cpp
-layer.scrollX(5, CRGB::Black);        // Scroll with fill color
-layer.blur(64);                       // Real-time blur effect
-layer.adjustBrightness(180);          // Global brightness
-CRGB avg = layer.getAverageColor();   // Color analysis
-```
-
-**Advanced Compositing:**
-```cpp
-// Photoshop-style blend modes
-compositor.BlendAdvanced(bg, fg, GFX_LayerCompositor::BLEND_MULTIPLY, 255);
-compositor.BlendAdvanced(bg, fg, GFX_LayerCompositor::BLEND_OVERLAY, 180);
-
-// Mask-based compositing
-compositor.Mask(background, foreground, mask_layer);
-```
-
-**Memory & Performance Monitoring:**
-```cpp
-Serial.printf("Layer memory usage: %d bytes\n", layer.getMemoryUsage());
-layer.printMemoryInfo();  // Debug information
-```
-
-### Performance Considerations
-
-A layer uses 3 bytes of memory per pixel (RGB), but now with optimized allocation:
-- **64x32 display**: ~6KB per layer  
-- **128x64 display**: ~24KB per layer
-- **256x128 display**: ~96KB per layer
-
-The new contiguous memory allocation provides ~30% better performance for large operations.
-
-## Available Blend Modes
-
-| Mode | Effect | Use Case |
-|------|--------|----------|
-| `BLEND_NORMAL` | Standard blending | General purpose |
-| `BLEND_MULTIPLY` | Darkening | Shadows, color burns |
-| `BLEND_SCREEN` | Lightening | Highlights, glows |
-| `BLEND_OVERLAY` | Contrast | Dramatic effects |
 
 ## Examples
 
-- **Basic Example**: `example/example.cpp.ino` - Original functionality
-- **Advanced Example**: `example/advanced_example.ino` - New features showcase
-- **Performance Test**: Demonstrates speed improvements
+- [`examples/framebuffer/framebuffer.ino`](examples/framebuffer/framebuffer.ino) — generic in-memory target; no display hardware dependency.
+- [`examples/basic/basic.ino`](examples/basic/basic.ino) — optional ESP32 HUB75 integration using ESP32-HUB75-MatrixPanel-I2S-DMA.
+- [`examples/advanced/advanced.ino`](examples/advanced/advanced.ino) — optional HUB75/layer/compositor integration. The display library and its hardware setup are example-only dependencies.
 
-## Documentation
+## Optional layers
 
-- [IMPROVEMENTS.md](IMPROVEMENTS.md) - Detailed feature documentation
-- [API Reference](src/) - Complete function reference
-- [Migration Guide](IMPROVEMENTS.md#migration-guide) - Upgrading from v1.0
+Include `GFX_Layer.hpp` to use a non-copyable RAII-owned CRGB framebuffer. Each layer stores one contiguous RGB array and one 8-bit opacity value for the whole layer. Layers are fully opaque by default; use `setAlpha()` to change a layer's opacity, or `setColorKey()` for hard per-pixel transparency based on a matching color. A color key makes every matching color transparent, so choose a key color that is not needed as a visible pixel.
 
-## Compatibility
+Composition writes the foreground over the background into a destination layer. It uses ordinary alpha blending: `setAlpha(0)` leaves the background unchanged, and `setAlpha(255)` replaces it with the foreground wherever it is not transparent. There are no selectable blend effects. `compositeMasked()` also lets a mask's brightness reduce the foreground opacity. Present pixels only when needed by passing a sink to `present()`; the sink receives x, y, and RGB color:
 
-- ✅ **ESP32** (all variants) - Fully optimized
-- ✅ **ESP8266** - Basic support
-- ✅ **Arduino** - Core functionality  
-- ✅ **STM32** - Fast performance
-- 🔄 **Other platforms** - Should work with minimal changes
+```cpp
+GFX_Layer background(64, 32), foreground(64, 32), result(64, 32);
+GFX_LayerCompositor compositor;
 
-## Installation
+foreground.setColorKey(CRGB::Black);
+foreground.clear(CRGB::Black); // black pixels are transparent during composition
+foreground.setAlpha(192);      // 0 = transparent, 255 = opaque
+foreground.setPixel(4, 4, CRGB::White);
+compositor.composite(background, foreground, result);
+result.present([](int16_t x, int16_t y, CRGB color) {
+  // Send color to the application's chosen display or output.
+});
+```
 
-1. Download or clone this repository
-2. Place in your Arduino libraries folder
-3. Include in your project: `#include <GFX_Lite.h>`
-4. For layers: `#include "GFX_Layer.hpp"`
+Layer storage is limited to 1 MiB by default; set `GFX_LITE_MAX_LAYER_MEMORY` before including the header to change the cap. The cap applies to RGB pixel storage; per-layer opacity adds no per-pixel memory. Check `isInitialized()` after construction. Copying layers is disabled to prevent accidental buffer aliasing/double-free. `drawPixelUnsafe()` intentionally skips bounds and initialization checks.
 
-## License
+The core's cooperative-yield hook is a no-op by default. Define `GFX_LITE_YIELD()` before including `GFX_Lite.h` if a platform needs to yield periodically while drawing.
 
-This library maintains the original licenses from AdaFruit_GFX and FastLED components.
+## Installation and compatibility
 
----
-
-*For detailed technical documentation, see [IMPROVEMENTS.md](IMPROVEMENTS.md)*
+Install this repository in the Arduino libraries directory and include `GFX_Lite.h`. The project keeps Adafruit_GFX and FastLED-derived notices in [`LICENSE`](LICENSE). Because the implementation uses Arduino `Print`/font APIs and compiler attributes, check the target toolchain rather than assuming every architecture listed by a package manager is supported.

@@ -115,6 +115,8 @@ GFX::GFX(int16_t w, int16_t h) : WIDTH(w), HEIGHT(h)
   cursor_y = cursor_x = 0;
   textsize_x = textsize_y = 1;
   textcolor = textbgcolor = 0xFFFF;
+  textcolor_rgb = textbgcolor_rgb = CRGB::White;
+  textColorIsRgb = false;
   wrap = true;
   _cp437 = false;
   gfxFont = NULL;
@@ -217,9 +219,7 @@ void GFX::drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, T color)
   } 
   else 
   {
-#if defined(ESP8266)
-    yield();
-#endif
+    GFX_LITE_YIELD();
     int16_t steep = abs(y1 - y0) > abs(x1 - x0);
     if (steep) {
       _swap_int16_t(x0, y0);
@@ -276,9 +276,7 @@ template void GFX::drawLine<uint16_t>(int16_t x0, int16_t y0, int16_t x1, int16_
 template<typename T>
 void GFX::drawCircle(int16_t x0, int16_t y0, int16_t r, T color)
 {
-#if defined(ESP8266)
-  yield();
-#endif
+  GFX_LITE_YIELD();
   int16_t f = 1 - r;
   int16_t ddF_x = 1;
   int16_t ddF_y = -2 * r;
@@ -1063,9 +1061,26 @@ void GFX::drawRGBBitmap(int16_t x, int16_t y, uint16_t *bitmap, uint8_t *mask, i
     @param    size  Font magnification level, 1 is 'original' size
 */
 /**************************************************************************/
-void GFX::drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color, uint16_t bg, uint8_t size) 
+void GFX::drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color, uint16_t bg, uint8_t size)
 {
   drawChar(x, y, c, color, bg, size, size);
+}
+
+void GFX::drawChar(int16_t x, int16_t y, unsigned char c, CRGB color, CRGB bg, uint8_t size)
+{
+  drawChar(x, y, c, color, bg, size, size);
+}
+
+void GFX::drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color, uint16_t bg,
+                   uint8_t size_x, uint8_t size_y)
+{
+  drawCharImpl(x, y, c, color, bg, size_x, size_y);
+}
+
+void GFX::drawChar(int16_t x, int16_t y, unsigned char c, CRGB color, CRGB bg,
+                   uint8_t size_x, uint8_t size_y)
+{
+  drawCharImpl(x, y, c, color, bg, size_x, size_y);
 }
 
 // Draw a character
@@ -1082,7 +1097,9 @@ void GFX::drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color, uint16
     @param    size_y  Font magnification level in Y-axis, 1 is 'original' size
 */
 /**************************************************************************/
-void GFX::drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color, uint16_t bg, uint8_t size_x, uint8_t size_y) 
+template<typename Color>
+void GFX::drawCharImpl(int16_t x, int16_t y, unsigned char c, Color color, Color bg,
+                       uint8_t size_x, uint8_t size_y)
 {
 
   if (!gfxFont) { // 'Classic' built-in font
@@ -1197,8 +1214,13 @@ size_t GFX::write(uint8_t c)
         cursor_x = 0;                                       // Reset x to zero,
         cursor_y += textsize_y * 8; // advance y one line
       }
-      drawChar(cursor_x, cursor_y, c, textcolor, textbgcolor, textsize_x,
-               textsize_y);
+      if (textColorIsRgb) {
+        drawChar(cursor_x, cursor_y, c, textcolor_rgb, textbgcolor_rgb,
+                 textsize_x, textsize_y);
+      } else {
+        drawChar(cursor_x, cursor_y, c, textcolor, textbgcolor, textsize_x,
+                 textsize_y);
+      }
       cursor_x += textsize_x * 6; // Advance x one char
     }
 
@@ -1221,8 +1243,13 @@ size_t GFX::write(uint8_t c)
             cursor_y += (int16_t)textsize_y *
                         (uint8_t)pgm_read_byte(&gfxFont->yAdvance);
           }
-          drawChar(cursor_x, cursor_y, c, textcolor, textbgcolor, textsize_x,
-                   textsize_y);
+          if (textColorIsRgb) {
+            drawChar(cursor_x, cursor_y, c, textcolor_rgb, textbgcolor_rgb,
+                     textsize_x, textsize_y);
+          } else {
+            drawChar(cursor_x, cursor_y, c, textcolor, textbgcolor, textsize_x,
+                     textsize_y);
+          }
         }
         cursor_x +=
           (uint8_t)pgm_read_byte(&glyph->xAdvance) * (int16_t)textsize_x;

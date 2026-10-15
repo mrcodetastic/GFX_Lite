@@ -3,6 +3,7 @@
 // on a 64x32 LED matrix
 //
 
+#include <GFX_Lite.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 
 #define PANEL_RES_X 64      // Number of pixels wide of each INDIVIDUAL panel module. 
@@ -44,18 +45,24 @@ void setup() {
 
   // Display Setup
   dma_display = new MatrixPanel_I2S_DMA(mxconfig);
-  dma_display->begin();
-  dma_display->setBrightness8(255); //0-255
+  if (!dma_display->begin()) {
+    Serial.println("Begin failed!");
+    return;  // Do not call setBrightness8() on an uninitialized display
+  }
+
+
   dma_display->clearScreen();
 
   for (int i = 0; i < 250; i++)
   {
     CRGB color_tmp = ColorFromPalette (currentPalette, i);
-    dma_display->fillScreen(color_tmp);
-    delay(10);
+    dma_display->fillScreen(dma_display->color565(color_tmp.r, color_tmp.b, color_tmp.g));
+    delay(12);
   }
 
   delay(1000);
+
+  
   Serial.println("Setup completed");
 
 }
@@ -88,7 +95,7 @@ void loop() {
     // print FPS rate every 5 seconds
     // Note: this is NOT a matrix refresh rate, it's the number of data frames being drawn to the DMA buffer per second
     if (fps_timer + 5000 < millis()){
-      Serial.printf_P(PSTR("Effect fps: %d\n"), fps/5);
+      Serial.printf("Effect fps: %d\n", fps/5);
       fps_timer = millis();
       fps = 0;
     }

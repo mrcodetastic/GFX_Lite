@@ -1,0 +1,50 @@
+name: Arduino CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-basic-esp32:
+    name: Compile basic HUB75 example
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+        with:
+          version: 1.1.1
+
+      - name: Configure ESP32 board package
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config set directories.user "$HOME/Arduino"
+          arduino-cli config add board_manager.additional_urls \
+            https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32@2.0.17
+
+      - name: Install GFX_Lite and example dependencies
+        run: |
+          mkdir -p "$HOME/Arduino/libraries/GFX_Lite"
+          cp "$GITHUB_WORKSPACE/library.properties" "$HOME/Arduino/libraries/GFX_Lite/"
+          cp -R "$GITHUB_WORKSPACE/src" "$HOME/Arduino/libraries/GFX_Lite/"
+          git clone --depth 1 \
+            https://github.com/mrcodetastic/ESP32-HUB75-MatrixPanel-DMA.git \
+            "$HOME/Arduino/libraries/ESP32-HUB75-MatrixPanel-DMA"
+          arduino-cli lib install "Adafruit GFX Library"
+          arduino-cli lib install FastLED
+
+      - name: Compile basic.ino with GFX_Lite enabled
+        run: >-
+          arduino-cli compile
+          --fqbn esp32:esp32:esp32
+          --warnings all
+          --build-property compiler.cpp.extra_flags=-DUSE_GFX_LITE
+          "$GITHUB_WORKSPACE/examples/basic"

@@ -1,569 +1,501 @@
-/**
- * Experimental layer class to do play with pixel in an off-screen buffer before painting to the display 
- *
- * Requires GFX_Lite
- *
- * Codetastic 2020
- **/
-
 #include "GFX_Layer.hpp"
 
-/**
- * Dim all the pixels in the display.
- */
-void GFX_Layer::dim(byte value)  {   
+#include <math.h>
 
-		// nscale8 max value is 255, or it'll flip back to 0 
-		// (documentation is wrong when it says x/256), it's actually x/255
-		for (int y = 0; y < _height; y++) {
-			for (int x = 0; x < _width; x++) {
-				pixels->data[y][x].nscale8(value);
-		}}
+namespace {
+
+uint8_t mixChannel(uint8_t from, uint8_t to, uint8_t amount) {
+    const uint32_t inverse = 255U - amount;
+    return static_cast<uint8_t>((static_cast<uint32_t>(from) * inverse +
+                                 static_cast<uint32_t>(to) * amount + 127U) / 255U);
 }
 
-void GFX_Layer::clear() { 
-		for (int y = 0; y < _height; y++) {
-			for (int x = 0; x < _width; x++) {
-				pixels->data[y][x] = CRGB(0, 0, 0);
-			}
-		}
+uint8_t multiplyChannel(uint8_t a, uint8_t b) {
+    return static_cast<uint8_t>((static_cast<uint32_t>(a) * b + 127U) / 255U);
 }
 
-/*
-void GFX_Layer::fillTransparent(int r, int g, int b) {
-	CRGB _pixel = 0 ;
-	for (int y = 0; y < _height; y++) {
-		for (int x = 0; x < _width; x++)
-		{
-			//_pixel = pixel[XY(x, y)];
-			_pixel = pixels->data[y][x];
-			
-			if (_pixel != transparency_colour) {
-				matrix->drawPixelRGB888( x, y, _pixel.r, _pixel.g, _pixel.b);
-			}
-
-		} // end loop to copy fast led to the dma matrix
-	}
+int32_t clampInt32(int32_t value, int32_t lower, int32_t upper) {
+    return value < lower ? lower : (value > upper ? upper : value);
 }
-*/
 
+} // namespace
 
-// default value is in definition
-void GFX_Layer::drawCentreText(const char *buf, textPosition textPos, const GFXfont *f, CRGB color, int yadjust) 
-{
-			int16_t x1, y1;
-			uint16_t w, h;
+GFX_Layer::GFX_Layer(uint16_t layer_width, uint16_t layer_height)
+    : GFX((layer_width <= INT16_MAX && layer_height <= INT16_MAX)
+              ? static_cast<int16_t>(layer_width) : 0,
+          (layer_width <= INT16_MAX && layer_height <= INT16_MAX)
+              ? static_cast<int16_t>(layer_height) : 0),
+      _alpha(255),
+      _color_key(CRGB::Black),
+      _transparency_mode(TransparencyMode::Opaque) {
+    if (layer_width == 0 || layer_height == 0 ||
+        layer_width > INT16_MAX || layer_height > INT16_MAX ||
+        requiredBytes(layer_width, layer_height) > GFX_LITE_MAX_LAYER_MEMORY ||
+        requiredBytes(layer_width, layer_height) >
+            static_cast<uint64_t>(static_cast<size_t>(-1))) {
+        invalidateDimensions();
+        return;
+    }
 
-			setTextWrap(false);
-			
-			if (f) {          // Font struct pointer passed in?
-					setFont((GFXfont *)f);
-			} else { // NULL passed.  Current font struct defined?
-					setFont(); // use default
-			}
+    const size_t count = static_cast<size_t>(layer_width) * layer_height;
+    _pixels.reset(new (std::nothrow) CRGB[count]);
+    if (!_pixels) {
+        invalidateDimensions();
+        return;
+    }
+    for (size_t i = 0; i < count; ++i) _pixels[i] = CRGB::Black;
+}
 
-			// getTextBounds isn't correct for variable width fonts
-			getTextBounds(buf, 0, 0, &x1, &y1, &w, &h); //calc width of new string
+uint64_t GFX_Layer::requiredBytes(uint16_t layer_width, uint16_t layer_height) {
+    const uint64_t count = static_cast<uint64_t>(layer_width) * layer_height;
+    return count * sizeof(CRGB);
+}
 
-			//Serial.printf("The width of the text is %d pixels, the height is %d pixels.\n", w,h);
+void GFX_Layer::invalidateDimensions() {
+    _pixels.reset();
+    GFX::WIDTH = GFX::HEIGHT = 0;
+    GFX::_width = GFX::_height = 0;
+}
 
-			/*
+size_t GFX_Layer::pixelCount() const {
+    if (GFX::WIDTH <= 0 || GFX::HEIGHT <= 0) return 0;
+    return static_cast<size_t>(GFX::WIDTH) * static_cast<size_t>(GFX::HEIGHT);
+}
 
-			 From: https://learn.adafruit.com/adafruit-gfx-graphics-library/using-fonts
-		
-			 For example, whereas the cursor position when printing with the classic font identified 
-			 the top-left corner of the character cell, with new fonts the cursor position indicates the baseline — 
-			 the bottom-most row — of subsequent text. Characters may vary in size and width, and don’t 
-			 necessarily begin at the exact cursor column (as in below, this character starts one pixel 
-			 left of the cursor, but others may be on or to the right of it).
-			 */
-			
-			if (!f) { 
-				if (textPos == TOP) {
-					setCursor((_width - w) / 2, 0); // top 
-				} else if (textPos == BOTTOM) {
-					setCursor((_width - w) / 2, _height - h);
-				} else { // middle
-					setCursor((_width - w) / 2, (_height - h) / 2); // top 
-				}
-			}
-			else // custom font
-			/* As we can't reliable know what is the actual FIRST and last 'lit' pixel, we need to check what was printed to the layer.*/
-			{				
-				int wstart = 0;
+size_t GFX_Layer::rawPixelIndex(uint16_t x, uint16_t y) const {
+    return static_cast<size_t>(y) * static_cast<size_t>(GFX::WIDTH) + x;
+}
 
-/*
-				if (w > 42) wstart = (_width - w) / 2;
-				else wstart = (_width - w) / 2;
-*/
-        wstart = (_width - w) / 2;
+size_t GFX_Layer::pixelIndex(int16_t x, int16_t y) const {
+    uint16_t raw_x = static_cast<uint16_t>(x);
+    uint16_t raw_y = static_cast<uint16_t>(y);
+    switch (getRotation()) {
+        case 1:
+            raw_x = static_cast<uint16_t>(y);
+            raw_y = static_cast<uint16_t>(GFX::HEIGHT - 1 - x);
+            break;
+        case 2:
+            raw_x = static_cast<uint16_t>(GFX::WIDTH - 1 - x);
+            raw_y = static_cast<uint16_t>(GFX::HEIGHT - 1 - y);
+            break;
+        case 3:
+            raw_x = static_cast<uint16_t>(GFX::WIDTH - 1 - y);
+            raw_y = static_cast<uint16_t>(x);
+            break;
+        default:
+            break;
+    }
+    return rawPixelIndex(raw_x, raw_y);
+}
 
-				if (textPos == TOP) {
-					setCursor(wstart, h+yadjust); // top 
-				} else if (textPos == BOTTOM) {
-					setCursor(wstart+1, (_height-1)+yadjust);
-				} else { // middle
-					setCursor( wstart, ((_height/2) + (h/2)) + yadjust);
-				}	
-				
-				//Serial.printf("Layer: x1: %d, y1: %d, w: %d, h: %d.\n", x1, y1, w, h);			
-			}
+bool GFX_Layer::isValidCoordinate(int16_t x, int16_t y) const {
+    return isInitialized() && x >= 0 && y >= 0 && x < width() && y < height();
+}
 
-		//	setCursor(0,16);
-			setTextColor(this->color565(color.r, color.g, color.b)); // Need to confirm from FastLed CRGB to adafruit 565
-			print(buf);
+void GFX_Layer::drawPixel(int16_t x, int16_t y, CRGB color) {
+    setPixel(x, y, color);
+}
 
-} // end drawCentreText
+void GFX_Layer::drawPixel(int16_t x, int16_t y, uint16_t color) {
+    setPixel(x, y, color565_to_CRGB(color));
+}
 
+bool GFX_Layer::setPixel(int16_t x, int16_t y, CRGB color) {
+    if (!isValidCoordinate(x, y)) return false;
+    const size_t index = pixelIndex(x, y);
+    _pixels[index] = color;
+    return true;
+}
 
-  // Move the contents of the screen left (-ve) or right (+ve)
-  void GFX_Layer::moveX(int offset) 
-  {
-		if(offset > 0) { // move right
-		//	Sprintln("Moving right");
+CRGB GFX_Layer::getPixel(int16_t x, int16_t y) const {
+    if (!isValidCoordinate(x, y)) return CRGB::Black;
+    return _pixels[pixelIndex(x, y)];
+}
 
-			for(int x = _width - 1; x >= 0; x--){ // 63 to 0
-				for(int y = 0; y < _height; y++){ // 0 to 31
-					if (x - offset >= 0) 
-					{
-						//  Serial.printf("setting y %d x %d to y %d x %d\n", y, x, y, x-offset);
-						pixels->data[y][x] = pixels->data[y][x-offset];
-					}
-					else {
-						pixels->data[y][x] = BLACK_BACKGROUND_PIXEL_COLOUR;            
-					}
-				}    
-			}
-		} else { // move left
+void GFX_Layer::setColorKey(CRGB color) {
+    _color_key = color;
+    _transparency_mode = TransparencyMode::ColorKey;
+}
 
-		//	Sprintln("Moving Left");
-			for(int x = 0; x <=_width - 1; x++){
-				for(int y = 0; y < _height; y++){
-					if ( x > (_width-1)+offset )
-					{
-						pixels->data[y][x] = BLACK_BACKGROUND_PIXEL_COLOUR;                    
-						//Serial.println("eh?");
-					}
-					else
-					{
-						pixels->data[y][x] = pixels->data[y][x-offset]; 
-						//	Serial.println("eh?");
-					}
-				}    
-			}         
-		} 
-  } 
-  
-/**
- * Centre the contents of the layer based on the leftmost and rightmost pixels.
- * Useful if you want to make sure text / graphics IS in the centre of the display.
- */
-  void GFX_Layer::autoCenterX()
-  {
-	  	int leftmost_x = 0, rightmost_x = 0, adjusted_leftmost_x = 0;
+void GFX_Layer::disableTransparency() {
+    _transparency_mode = TransparencyMode::Opaque;
+}
 
-		// Find leftmost
-		for(int x = 0; x < _width; x++) { 
-			for(int y = 0; y < _height; y++) {
-				if (pixels->data[y][x] != BLACK_BACKGROUND_PIXEL_COLOUR)
-				{
-					leftmost_x = x;
-					//Serial.printf("Left most x pixel is %d\n", leftmost_x);
-					goto rightmost;
-				}
-			}
-		}
+bool GFX_Layer::isTransparent(int16_t x, int16_t y) const {
+    if (!isValidCoordinate(x, y)) return true;
+    if (_alpha == 0) return true;
+    const size_t index = pixelIndex(x, y);
+    return _transparency_mode == TransparencyMode::ColorKey && _pixels[index] == _color_key;
+}
 
-		rightmost:
-		for(int x = _width-1; x >= 0; x--) { 
-			for(int y = 0; y < _height; y++) {
-				if (pixels->data[y][x] != BLACK_BACKGROUND_PIXEL_COLOUR)
-				{
-					rightmost_x = x+1;
-					//Serial.printf("Right most x pixel is %d\n", rightmost_x);					
-					goto centreit;
-				}
-			}
-		}
+void GFX_Layer::clear(CRGB color) {
+    if (!isInitialized()) return;
+    const size_t count = pixelCount();
+    for (size_t i = 0; i < count; ++i) _pixels[i] = color;
+}
 
-		centreit:
-			adjusted_leftmost_x = ( _width - (rightmost_x - leftmost_x))/2;
-			//Serial.printf("Adjusted: %d, Moving x coords by %d pixels.\n", adjusted_leftmost_x, adjusted_leftmost_x-leftmost_x);
-			moveX(adjusted_leftmost_x-leftmost_x);
-  } // end autoCentreX
-  
-  void GFX_Layer::moveY(int delta)
-  {
-	// Not implemented
-  }
+void GFX_Layer::fillTransparent() {
+    if (!isInitialized()) return;
+    if (_transparency_mode == TransparencyMode::ColorKey) {
+        clear(_color_key);
+    } else {
+        _alpha = 0;
+    }
+}
 
-// Advanced layer operations implementations
-void GFX_Layer::fastFillRect(int16_t x, int16_t y, int16_t w, int16_t h, CRGB color) {
-    // Bounds checking and clipping
-    if (x >= _width || y >= _height) return;
-    if (x + w < 0 || y + h < 0) return;
-    
-    // Clip to layer bounds
-    if (x < 0) { w += x; x = 0; }
-    if (y < 0) { h += y; y = 0; }
-    if (x + w > _width) { w = _width - x; }
-    if (y + h > _height) { h = _height - y; }
-    
-    if (w <= 0 || h <= 0) return;
-    
-    // Use memset for single-row fills when possible
-    for (int16_t j = y; j < y + h; j++) {
-        for (int16_t i = x; i < x + w; i++) {
-            pixels->data[j][i] = color;
+void GFX_Layer::dim(uint8_t scale) {
+    adjustBrightness(scale);
+}
+
+void GFX_Layer::moveX(int delta) {
+    const int32_t shift = clampInt32(delta, INT16_MIN, INT16_MAX);
+    scrollX(static_cast<int16_t>(shift));
+}
+
+void GFX_Layer::moveY(int delta) {
+    const int32_t shift = clampInt32(delta, INT16_MIN, INT16_MAX);
+    scrollY(static_cast<int16_t>(shift));
+}
+
+void GFX_Layer::autoCenterX() {
+    if (!isInitialized()) return;
+    int16_t left = -1;
+    int16_t right = -1;
+    for (int16_t x = 0; x < width(); ++x) {
+        for (int16_t y = 0; y < height(); ++y) {
+            if (!isTransparent(x, y) && getPixel(x, y) != CRGB::Black) {
+                if (left < 0) left = x;
+                right = x;
+            }
         }
     }
+    if (left < 0) return;
+    const int16_t shift = static_cast<int16_t>((width() - (right - left + 1)) / 2 - left);
+    moveX(shift);
+}
+
+void GFX_Layer::copyRect(int16_t src_x, int16_t src_y, int16_t dst_x, int16_t dst_y,
+                         int16_t copy_width, int16_t copy_height) {
+    if (!isInitialized() || copy_width <= 0 || copy_height <= 0) return;
+
+    int32_t sx = src_x, sy = src_y, dx = dst_x, dy = dst_y;
+    int32_t w = copy_width, h = copy_height;
+    if (sx < 0) { const int32_t d = -sx; sx = 0; dx += d; w -= d; }
+    if (sy < 0) { const int32_t d = -sy; sy = 0; dy += d; h -= d; }
+    if (dx < 0) { const int32_t d = -dx; dx = 0; sx += d; w -= d; }
+    if (dy < 0) { const int32_t d = -dy; dy = 0; sy += d; h -= d; }
+    if (sx + w > width()) w = width() - sx;
+    if (dx + w > width()) w = width() - dx;
+    if (sy + h > height()) h = height() - sy;
+    if (dy + h > height()) h = height() - dy;
+    if (w <= 0 || h <= 0) return;
+
+    const int32_t y_start = (dy > sy) ? h - 1 : 0;
+    const int32_t y_end = (dy > sy) ? -1 : h;
+    const int32_t y_step = (dy > sy) ? -1 : 1;
+    for (int32_t row = y_start; row != y_end; row += y_step) {
+        const int32_t x_start = (dy == sy && dx > sx) ? w - 1 : 0;
+        const int32_t x_end = (dy == sy && dx > sx) ? -1 : w;
+        const int32_t x_step = (dy == sy && dx > sx) ? -1 : 1;
+        for (int32_t col = x_start; col != x_end; col += x_step) {
+            const size_t source = pixelIndex(static_cast<int16_t>(sx + col),
+                                             static_cast<int16_t>(sy + row));
+            const size_t destination = pixelIndex(static_cast<int16_t>(dx + col),
+                                                  static_cast<int16_t>(dy + row));
+            copyPixel(source, destination);
+        }
+    }
+}
+
+void GFX_Layer::copyPixel(size_t source, size_t destination) {
+    _pixels[destination] = _pixels[source];
+}
+
+void GFX_Layer::scrollX(int16_t pixels, CRGB fill_color) {
+    if (!isInitialized() || pixels == 0) return;
+    const int32_t shift = pixels;
+    const int32_t w = width();
+    const int32_t h = height();
+    if (shift >= w || shift <= -w) {
+        fastFillScreen(fill_color);
+        return;
+    }
+    for (int32_t y = 0; y < h; ++y) {
+        if (shift > 0) {
+            for (int32_t x = w - 1; x >= shift; --x)
+                copyPixel(pixelIndex(x - shift, y), pixelIndex(x, y));
+            for (int32_t x = 0; x < shift; ++x) {
+                setPixel(x, y, fill_color);
+            }
+        } else {
+            const int32_t left = -shift;
+            for (int32_t x = 0; x < w - left; ++x)
+                copyPixel(pixelIndex(x + left, y), pixelIndex(x, y));
+            for (int32_t x = w - left; x < w; ++x) {
+                setPixel(x, y, fill_color);
+            }
+        }
+    }
+}
+
+void GFX_Layer::scrollY(int16_t pixels, CRGB fill_color) {
+    if (!isInitialized() || pixels == 0) return;
+    const int32_t shift = pixels;
+    const int32_t w = width();
+    const int32_t h = height();
+    if (shift >= h || shift <= -h) {
+        fastFillScreen(fill_color);
+        return;
+    }
+    if (shift > 0) {
+        for (int32_t y = h - 1; y >= shift; --y)
+            for (int32_t x = 0; x < w; ++x)
+                copyPixel(pixelIndex(x, y - shift), pixelIndex(x, y));
+        for (int32_t y = 0; y < shift; ++y)
+            for (int32_t x = 0; x < w; ++x) {
+                setPixel(x, y, fill_color);
+            }
+    } else {
+        const int32_t up = -shift;
+        for (int32_t y = 0; y < h - up; ++y)
+            for (int32_t x = 0; x < w; ++x)
+                copyPixel(pixelIndex(x, y + up), pixelIndex(x, y));
+        for (int32_t y = h - up; y < h; ++y)
+            for (int32_t x = 0; x < w; ++x) {
+                setPixel(x, y, fill_color);
+            }
+    }
+}
+
+void GFX_Layer::flipHorizontal() {
+    if (!isInitialized()) return;
+    for (int16_t y = 0; y < height(); ++y) {
+        for (int16_t x = 0; x < width() / 2; ++x) {
+            const size_t a = pixelIndex(x, y);
+            const size_t b = pixelIndex(static_cast<int16_t>(width() - 1 - x), y);
+            CRGB color = _pixels[a]; _pixels[a] = _pixels[b]; _pixels[b] = color;
+        }
+    }
+}
+
+void GFX_Layer::flipVertical() {
+    if (!isInitialized()) return;
+    for (int16_t y = 0; y < height() / 2; ++y) {
+        for (int16_t x = 0; x < width(); ++x) {
+            const size_t a = pixelIndex(x, y);
+            const size_t b = pixelIndex(x, static_cast<int16_t>(height() - 1 - y));
+            CRGB color = _pixels[a]; _pixels[a] = _pixels[b]; _pixels[b] = color;
+        }
+    }
+}
+
+void GFX_Layer::fastFillRect(int16_t x, int16_t y, int16_t rect_width,
+                             int16_t rect_height, CRGB color) {
+    if (!isInitialized() || rect_width <= 0 || rect_height <= 0) return;
+    int32_t left = x, top = y, right = left + rect_width, bottom = top + rect_height;
+    if (left < 0) left = 0;
+    if (top < 0) top = 0;
+    if (right > width()) right = width();
+    if (bottom > height()) bottom = height();
+    for (int32_t row = top; row < bottom; ++row)
+        for (int32_t col = left; col < right; ++col)
+            setPixel(static_cast<int16_t>(col), static_cast<int16_t>(row), color);
 }
 
 void GFX_Layer::fastFillScreen(CRGB color) {
-    // Use the contiguous memory for faster fills
-    if (pixels->contiguous_memory) {
-        for (int i = 0; i < _width * _height; i++) {
-            pixels->contiguous_memory[i] = color;
-        }
-    } else {
-        // Fallback to row-by-row
-        for (int y = 0; y < _height; y++) {
-            for (int x = 0; x < _width; x++) {
-                pixels->data[y][x] = color;
-            }
-        }
-    }
-}
-
-void GFX_Layer::scrollX(int16_t pixels_to_scroll, CRGB fill_color) {
-    if (pixels_to_scroll == 0) return;
-    
-    if (pixels_to_scroll > 0) {
-        // Scroll right
-        for (int y = 0; y < _height; y++) {
-            // Move existing pixels
-            for (int x = _width - 1; x >= pixels_to_scroll; x--) {
-                pixels->data[y][x] = pixels->data[y][x - pixels_to_scroll];
-            }
-            // Fill left side with fill color
-            for (int x = 0; x < pixels_to_scroll && x < _width; x++) {
-                pixels->data[y][x] = fill_color;
-            }
-        }
-    } else {
-        // Scroll left
-        pixels_to_scroll = -pixels_to_scroll;
-        for (int y = 0; y < _height; y++) {
-            // Move existing pixels
-            for (int x = 0; x < _width - pixels_to_scroll; x++) {
-                pixels->data[y][x] = pixels->data[y][x + pixels_to_scroll];
-            }
-            // Fill right side with fill color
-            for (int x = _width - pixels_to_scroll; x < _width; x++) {
-                pixels->data[y][x] = fill_color;
-            }
-        }
-    }
-}
-
-void GFX_Layer::scrollY(int16_t pixels_to_scroll, CRGB fill_color) {
-    if (pixels_to_scroll == 0) return;
-    
-    if (pixels_to_scroll > 0) {
-        // Scroll down
-        for (int y = _height - 1; y >= pixels_to_scroll; y--) {
-            for (int x = 0; x < _width; x++) {
-                pixels->data[y][x] = pixels->data[y - pixels_to_scroll][x];
-            }
-        }
-        // Fill top with fill color
-        for (int y = 0; y < pixels_to_scroll && y < _height; y++) {
-            for (int x = 0; x < _width; x++) {
-                pixels->data[y][x] = fill_color;
-            }
-        }
-    } else {
-        // Scroll up
-        pixels_to_scroll = -pixels_to_scroll;
-        for (int y = 0; y < _height - pixels_to_scroll; y++) {
-            for (int x = 0; x < _width; x++) {
-                pixels->data[y][x] = pixels->data[y + pixels_to_scroll][x];
-            }
-        }
-        // Fill bottom with fill color
-        for (int y = _height - pixels_to_scroll; y < _height; y++) {
-            for (int x = 0; x < _width; x++) {
-                pixels->data[y][x] = fill_color;
-            }
-        }
-    }
+    if (!isInitialized()) return;
+    const size_t count = pixelCount();
+    for (size_t i = 0; i < count; ++i) _pixels[i] = color;
 }
 
 void GFX_Layer::adjustBrightness(uint8_t scale) {
-    if (pixels->contiguous_memory) {
-        for (int i = 0; i < _width * _height; i++) {
-            pixels->contiguous_memory[i].nscale8(scale);
-        }
-    } else {
-        for (int y = 0; y < _height; y++) {
-            for (int x = 0; x < _width; x++) {
-                pixels->data[y][x].nscale8(scale);
+    if (!isInitialized()) return;
+    for (size_t i = 0; i < pixelCount(); ++i) _pixels[i].nscale8(scale);
+}
+
+void GFX_Layer::blur(uint8_t blur_amount) {
+    if (!isInitialized() || blur_amount == 0) return;
+    const size_t count = pixelCount();
+    std::unique_ptr<CRGB[]> source(new (std::nothrow) CRGB[count]);
+    if (!source) return;
+    for (size_t i = 0; i < count; ++i) source[i] = _pixels[i];
+    for (int32_t y = 0; y < GFX::HEIGHT; ++y) {
+        for (int32_t x = 0; x < GFX::WIDTH; ++x) {
+            uint32_t red = 0, green = 0, blue = 0;
+            for (int32_t dy = -1; dy <= 1; ++dy) {
+                for (int32_t dx = -1; dx <= 1; ++dx) {
+                    const int32_t sample_x = x + dx;
+                    const int32_t sample_y = y + dy;
+                    if (sample_x < 0 || sample_x >= GFX::WIDTH ||
+                        sample_y < 0 || sample_y >= GFX::HEIGHT) continue;
+                    const CRGB pixel = source[rawPixelIndex(x + dx, y + dy)];
+                    red += pixel.r; green += pixel.g; blue += pixel.b;
+                }
             }
+            const CRGB average(red / 9, green / 9, blue / 9);
+            const size_t index = rawPixelIndex(x, y);
+            _pixels[index] = blend(source[index], average, blur_amount);
         }
+    }
+}
+
+void GFX_Layer::adjustGamma(float gamma) {
+    if (!isInitialized() || gamma <= 0.0f) return;
+    for (size_t i = 0; i < pixelCount(); ++i) {
+        for (uint8_t channel = 0; channel < 3; ++channel) {
+            const float normalized = static_cast<float>(_pixels[i][channel]) / 255.0f;
+            float corrected = ::pow(normalized, gamma) * 255.0f + 0.5f;
+            if (corrected < 0.0f) corrected = 0.0f;
+            if (corrected > 255.0f) corrected = 255.0f;
+            _pixels[i][channel] = static_cast<uint8_t>(corrected);
+        }
+    }
+}
+
+void GFX_Layer::applyColorMatrix(const float matrix[3][3]) {
+    if (!isInitialized() || !matrix) return;
+    for (size_t i = 0; i < pixelCount(); ++i) {
+        const float red = static_cast<float>(_pixels[i].r);
+        const float green = static_cast<float>(_pixels[i].g);
+        const float blue = static_cast<float>(_pixels[i].b);
+        uint8_t output[3];
+        for (uint8_t row = 0; row < 3; ++row) {
+            float value = matrix[row][0] * red + matrix[row][1] * green + matrix[row][2] * blue;
+            if (value < 0.0f) value = 0.0f;
+            if (value > 255.0f) value = 255.0f;
+            output[row] = static_cast<uint8_t>(value + 0.5f);
+        }
+        _pixels[i].setRGB(output[0], output[1], output[2]);
     }
 }
 
 CRGB GFX_Layer::getAverageColor() const {
-    uint32_t total_r = 0, total_g = 0, total_b = 0;
-    uint32_t pixel_count = _width * _height;
-    
-    if (pixels->contiguous_memory) {
-        for (int i = 0; i < pixel_count; i++) {
-            total_r += pixels->contiguous_memory[i].r;
-            total_g += pixels->contiguous_memory[i].g;
-            total_b += pixels->contiguous_memory[i].b;
+    if (!isInitialized() || pixelCount() == 0) return CRGB::Black;
+    uint64_t red = 0, green = 0, blue = 0;
+    const size_t count = pixelCount();
+    for (size_t i = 0; i < count; ++i) {
+        red += _pixels[i].r; green += _pixels[i].g; blue += _pixels[i].b;
+    }
+    return CRGB(red / count, green / count, blue / count);
+}
+
+CRGB GFX_Layer::getDominantColor() const {
+    if (!isInitialized()) return CRGB::Black;
+    uint32_t histogram[64] = {};
+    uint32_t visible_count = 0;
+    for (int16_t y = 0; y < height(); ++y) {
+        for (int16_t x = 0; x < width(); ++x) {
+            if (isTransparent(x, y)) continue;
+            const CRGB color = getPixel(x, y);
+            const uint8_t bin = static_cast<uint8_t>((color.r >> 6) << 4 |
+                                                     (color.g >> 6) << 2 |
+                                                     (color.b >> 6));
+            ++histogram[bin];
+            ++visible_count;
         }
+    }
+    if (visible_count == 0) return CRGB::Black;
+    uint8_t dominant = 0;
+    for (uint8_t i = 1; i < 64; ++i)
+        if (histogram[i] > histogram[dominant]) dominant = static_cast<uint8_t>(i);
+    return CRGB(((dominant >> 4) & 0x03) * 85 + 42,
+                ((dominant >> 2) & 0x03) * 85 + 42,
+                (dominant & 0x03) * 85 + 42);
+}
+
+uint32_t GFX_Layer::getPixelCount(CRGB target_color) const {
+    if (!isInitialized()) return 0;
+    uint32_t count = 0;
+    for (size_t i = 0; i < pixelCount(); ++i)
+        if (_pixels[i] == target_color) ++count;
+    return count;
+}
+
+size_t GFX_Layer::getMemoryUsage() const {
+    if (!isInitialized()) return 0;
+    return pixelCount() * sizeof(CRGB);
+}
+
+void GFX_Layer::drawCentreText(const char* text, textPosition position,
+                               const GFXfont* font, CRGB color, int y_adjust) {
+    if (!isInitialized() || !text) return;
+    int16_t x1 = 0, y1 = 0;
+    uint16_t text_width = 0, text_height = 0;
+    setTextWrap(false);
+    setFont(font);
+    getTextBounds(text, 0, 0, &x1, &y1, &text_width, &text_height);
+    if (!font) {
+        if (position == TOP) setCursor((width() - text_width) / 2, 0);
+        else if (position == BOTTOM) setCursor((width() - text_width) / 2, height() - text_height);
+        else setCursor((width() - text_width) / 2, (height() - text_height) / 2);
     } else {
-        for (int y = 0; y < _height; y++) {
-            for (int x = 0; x < _width; x++) {
-                total_r += pixels->data[y][x].r;
-                total_g += pixels->data[y][x].g;
-                total_b += pixels->data[y][x].b;
-            }
-        }
+        const int16_t centered_x = static_cast<int16_t>((width() - text_width) / 2);
+        if (position == TOP) setCursor(centered_x, text_height + y_adjust);
+        else if (position == BOTTOM) setCursor(centered_x + 1, height() - 1 + y_adjust);
+        else setCursor(centered_x, (height() / 2) + (text_height / 2) + y_adjust);
     }
-    
-    return CRGB(total_r / pixel_count, total_g / pixel_count, total_b / pixel_count);
+    setTextColor(color);
+    print(text);
 }
 
-void GFX_Layer::blur(uint8_t blur_amount) {
-    if (blur_amount == 0) return;
-    
-    // Simple box blur implementation
-    // Note: This is a basic implementation. For better results, consider Gaussian blur
-    for (int y = 1; y < _height - 1; y++) {
-        for (int x = 1; x < _width - 1; x++) {
-            uint16_t r = 0, g = 0, b = 0;
-            uint8_t count = 0;
-            
-            // Sample 3x3 neighborhood
-            for (int dy = -1; dy <= 1; dy++) {
-                for (int dx = -1; dx <= 1; dx++) {
-                    r += pixels->data[y + dy][x + dx].r;
-                    g += pixels->data[y + dy][x + dx].g;
-                    b += pixels->data[y + dy][x + dx].b;
-                    count++;
+CRGB GFX_LayerCompositor::mix(CRGB from, CRGB to, uint8_t amount) {
+    return CRGB(mixChannel(from.r, to.r, amount),
+                mixChannel(from.g, to.g, amount),
+                mixChannel(from.b, to.b, amount));
+}
+
+bool GFX_LayerCompositor::composite(const GFX_Layer& background,
+                                   const GFX_Layer& foreground,
+                                   GFX_Layer& destination) const {
+    return compositeImpl(background, foreground, nullptr, destination);
+}
+
+bool GFX_LayerCompositor::compositeMasked(const GFX_Layer& background,
+                                          const GFX_Layer& foreground,
+                                          const GFX_Layer& mask,
+                                          GFX_Layer& destination) const {
+    return compositeImpl(background, foreground, &mask, destination);
+}
+
+bool GFX_LayerCompositor::compositeImpl(const GFX_Layer& background,
+                                        const GFX_Layer& foreground,
+                                        const GFX_Layer* mask,
+                                        GFX_Layer& destination) const {
+    if (!background.isInitialized() || !foreground.isInitialized() ||
+        !destination.isInitialized() || (mask && !mask->isInitialized())) return false;
+
+    int16_t width = background.width();
+    int16_t height = background.height();
+    if (foreground.width() < width) width = foreground.width();
+    if (destination.width() < width) width = destination.width();
+    if (foreground.height() < height) height = foreground.height();
+    if (destination.height() < height) height = destination.height();
+    if (mask) {
+        if (mask->width() < width) width = mask->width();
+        if (mask->height() < height) height = mask->height();
+    }
+    if (width <= 0 || height <= 0) return false;
+
+    for (int16_t y = 0; y < height; ++y) {
+        for (int16_t x = 0; x < width; ++x) {
+            const CRGB base = background.getPixel(x, y);
+            const CRGB over = foreground.getPixel(x, y);
+            uint8_t alpha = foreground.getAlpha();
+            if (foreground.isTransparent(x, y)) alpha = 0;
+
+            if (mask) {
+                if (mask->isTransparent(x, y)) alpha = 0;
+                else {
+                    const CRGB mask_color = mask->getPixel(x, y);
+                    const uint8_t luminance = static_cast<uint8_t>(
+                        (static_cast<uint16_t>(mask_color.r) + mask_color.g + mask_color.b) / 3U);
+                    alpha = multiplyChannel(alpha, luminance);
+                    alpha = multiplyChannel(alpha, mask->getAlpha());
                 }
             }
-            
-            CRGB blurred(r / count, g / count, b / count);
-            CRGB original = pixels->data[y][x];
-            
-            // Blend based on blur_amount
-            pixels->data[y][x] = blend(original, blurred, blur_amount);
+
+            destination.setPixel(x, y, mix(base, over, alpha));
         }
     }
+    return true;
 }
-
-
-GFX_Layer::~GFX_Layer(void)
-{
-  if (pixels) {
-    if (pixels->contiguous_memory) {
-      delete[] pixels->contiguous_memory;
-    }
-    if (pixels->data) {
-      delete[] pixels->data;
-    }
-    delete pixels;
-  }
-}
-	
-
-
-
-/* Merge FastLED layers into a super layer and display. Definition */
-
-/*
-	* Display the foreground pixels if they're not the background/transparent color.
-	* If not, then fill with whatever is in the background.
-	* 
-	* writeToBg = write the result back to the _bgLayer, and not directly to the output device!
-	* 			   -> no need to do a subsequent bgLayer.display() otherwise.
-	*/
-void GFX_LayerCompositor::Stack(GFX_Layer &_bgLayer, GFX_Layer &_fgLayer, bool writeBackToBg)
-{
-		for (int y = 0; y < _fgLayer.getHeight(); y++) {
-			for (int x = 0; x < _fgLayer.getWidth(); x++)
-			{
-				//https://www.educative.io/edpresso/how-to-resolve-the-expression-must-have-class-type-error-in-cpp
-				if (_fgLayer.pixels->data[y][x] == _fgLayer.transparency_colour) // foreground is transparent, show the _bgLayer colors
-				{
-					if (writeBackToBg) // write the foreground to the background layer... perhaps so we can do stuff later with the _fgLayer.
-						_bgLayer.pixels->data[y][x]	= _bgLayer.pixels->data[y][x];
-					else
-
-						callback(x,y, _bgLayer.pixels->data[y][x].r, _bgLayer.pixels->data[y][x].g, _bgLayer.pixels->data[y][x].b );
-
-				} // if the foreground is NOT transparent, then print whatever is the bg
-				else
-				{
-					if (writeBackToBg) // write the foreground to the background layer... perhaps so we can do stuff later with the _fgLayer.
-						_bgLayer.pixels->data[y][x]	= _fgLayer.pixels->data[y][x];
-					else
-						callback(x,y, _fgLayer.pixels->data[y][x].r, _fgLayer.pixels->data[y][x].g, _fgLayer.pixels->data[y][x].b );
-				}
-
-			} // end x loop
-		} // end y loop
-}  // end stack
-
-
-/*
-	* Where the foreground pixels are not the background/transparent color, populate with 
-	* whatever is in the background.
-	*/
-void GFX_LayerCompositor::Siloette(GFX_Layer &_bgLayer,  GFX_Layer &_fgLayer)
-{
-
-		for (int y = 0; y < _fgLayer.getHeight(); y++) {
-			for (int x = 0; x < _fgLayer.getWidth(); x++)
-			{
-				//https://www.educative.io/edpresso/how-to-resolve-the-expression-must-have-class-type-error-in-cpp
-				if (_fgLayer.pixels->data[y][x] != _fgLayer.transparency_colour)
-				{
-					callback(x,y, _bgLayer.pixels->data[y][x].r, _bgLayer.pixels->data[y][x].g, _bgLayer.pixels->data[y][x].b );
-				} // if the foreground is transparent, then print whatever is the bg
-				else
-				{
-					callback(x,y, 0,0,0);
-				}
-
-			} // end x loop
-		} // end y loop
-}  // end stack		
-
-
-
-
-
-void GFX_LayerCompositor::Blend(GFX_Layer &_bgLayer, GFX_Layer &_fgLayer, uint8_t ratio)
-{
-	CRGB _pixel = 0 ;
-
-	for (int y = 0; y < _fgLayer.getHeight(); y++) 
-	{
-		for (int x = 0; x < _fgLayer.getWidth(); x++)
-		{
-				_pixel = _bgLayer.pixels->data[y][x];
-			
-				// (set ratio to 127 for a constant 50% / 50% blend)
-				//_pixel = blend(_bgLayer.pixels->data[y][x], _fgLayer.pixels->data[y][x], ratio);
-
-				// Blend with background if foreground pixel isn't clear/transparent
-				if (_fgLayer.pixels->data[y][x] != _fgLayer.transparency_colour)
-				{
-					_pixel = blend(_bgLayer.pixels->data[y][x], _fgLayer.pixels->data[y][x], ratio);
-				} // if the foreground is transparent, then print whatever is the bg
-				
-				
-				// https://gist.github.com/StefanPetrick/0c0d54d0f35ea9cca983
-				callback(x,y, _pixel.r, _pixel.g, _pixel.b );
-
-		} // end x loop
-	} // end y loop
-
-
-
-} // end blend
-
-
-// Advanced blending function implementation
-CRGB GFX_LayerCompositor::blendPixels(CRGB base, CRGB overlay, BlendMode mode, uint8_t opacity) {
-    if (opacity == 0) return base;
-    if (opacity == 255 && mode == BLEND_NORMAL) return overlay;
-    
-    CRGB result;
-    
-    switch (mode) {
-        case BLEND_NORMAL:
-            result = overlay;
-            break;
-            
-        case BLEND_MULTIPLY:
-            result.r = (base.r * overlay.r) / 255;
-            result.g = (base.g * overlay.g) / 255;
-            result.b = (base.b * overlay.b) / 255;
-            break;
-            
-        case BLEND_SCREEN:
-            result.r = 255 - ((255 - base.r) * (255 - overlay.r)) / 255;
-            result.g = 255 - ((255 - base.g) * (255 - overlay.g)) / 255;
-            result.b = 255 - ((255 - base.b) * (255 - overlay.b)) / 255;
-            break;
-            
-        case BLEND_OVERLAY:
-            // Simple overlay implementation
-            for (int i = 0; i < 3; i++) {
-                uint8_t* base_c = (i == 0) ? &base.r : (i == 1) ? &base.g : &base.b;
-                uint8_t* overlay_c = (i == 0) ? &overlay.r : (i == 1) ? &overlay.g : &overlay.b;
-                uint8_t* result_c = (i == 0) ? &result.r : (i == 1) ? &result.g : &result.b;
-                
-                if (*base_c < 128) {
-                    *result_c = (2 * (*base_c) * (*overlay_c)) / 255;
-                } else {
-                    *result_c = 255 - (2 * (255 - *base_c) * (255 - *overlay_c)) / 255;
-                }
-            }
-            break;
-            
-        default:
-            result = overlay; // fallback to normal blend
-            break;
-    }
-    
-    // Apply opacity
-    if (opacity < 255) {
-        result = blend(base, result, opacity);
-    }
-    
-    return result;
-}
-
-void GFX_LayerCompositor::BlendAdvanced(GFX_Layer &_bgLayer, GFX_Layer &_fgLayer, BlendMode mode, uint8_t opacity) {
-    for (int y = 0; y < min(_bgLayer.getHeight(), _fgLayer.getHeight()); y++) {
-        for (int x = 0; x < min(_bgLayer.getWidth(), _fgLayer.getWidth()); x++) {
-            CRGB base = _bgLayer.pixels->data[y][x];
-            CRGB overlay = _fgLayer.pixels->data[y][x];
-            
-            // Skip transparent pixels in foreground layer if transparency is enabled
-            if (_fgLayer.transparency_enabled && overlay == _fgLayer.transparency_colour) {
-                callback(x, y, base.r, base.g, base.b);
-                continue;
-            }
-            
-            CRGB result = blendPixels(base, overlay, mode, opacity);
-            callback(x, y, result.r, result.g, result.b);
-        }
-    }
-}
-
-void GFX_LayerCompositor::Mask(GFX_Layer &_bgLayer, GFX_Layer &_fgLayer, GFX_Layer &_maskLayer) {
-    int max_width = min(min(_bgLayer.getWidth(), _fgLayer.getWidth()), _maskLayer.getWidth());
-    int max_height = min(min(_bgLayer.getHeight(), _fgLayer.getHeight()), _maskLayer.getHeight());
-    
-    for (int y = 0; y < max_height; y++) {
-        for (int x = 0; x < max_width; x++) {
-            CRGB base = _bgLayer.pixels->data[y][x];
-            CRGB overlay = _fgLayer.pixels->data[y][x];
-            CRGB mask = _maskLayer.pixels->data[y][x];
-            
-            // Use mask luminance as alpha
-            uint8_t alpha = (mask.r + mask.g + mask.b) / 3;
-            CRGB result = blend(base, overlay, alpha);
-            
-            callback(x, y, result.r, result.g, result.b);
-        }
-    }
-}
-

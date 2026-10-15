@@ -4,8 +4,13 @@
 #include "Arduino.h"
 #include "Print.h"
 #include "gfxfont.h"
-#include <type_traits>
 #include <FastLED_Lite.h>
+
+// Optional cooperative-scheduler hook. Define GFX_LITE_YIELD() before
+// including this header when the target requires periodic yielding.
+#ifndef GFX_LITE_YIELD
+#define GFX_LITE_YIELD() ((void)0)
+#endif
 
 class GFX : public Print
 {
@@ -77,9 +82,10 @@ class GFX : public Print
     void drawRGBBitmap(int16_t x, int16_t y, const uint16_t bitmap[], const uint8_t mask[], int16_t w, int16_t h);
     void drawRGBBitmap(int16_t x, int16_t y, uint16_t *bitmap, uint8_t *mask, int16_t w, int16_t h);
 
-    // Limitation: Font colors, must be 16-bit 565 colour format
     void drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color, uint16_t bg, uint8_t size);
     void drawChar(int16_t x, int16_t y, unsigned char c, uint16_t color, uint16_t bg, uint8_t size_x, uint8_t size_y);
+    void drawChar(int16_t x, int16_t y, unsigned char c, CRGB color, CRGB bg, uint8_t size);
+    void drawChar(int16_t x, int16_t y, unsigned char c, CRGB color, CRGB bg, uint8_t size_x, uint8_t size_y);
 
     void getTextBounds(const char *string, int16_t x, int16_t y, int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h);
     void getTextBounds(const __FlashStringHelper *s, int16_t x, int16_t y, int16_t *x1, int16_t *y1, uint16_t *w, uint16_t *h);
@@ -103,45 +109,43 @@ class GFX : public Print
 
     /**********************************************************************/
     /*!
-      @brief   Set text font color with transparant background
-      @param   c   16-bit 5-6-5 Color to draw text with
+      @brief   Set text font color with transparent background
+      @param   c   RGB565 or CRGB color to draw text with
       @note    For 'transparent' background, background and foreground
                are set to same color rather than using a separate flag.
     */
     /**********************************************************************/
-    template<typename T>
-    void setTextColor(T c) 
+    void setTextColor(uint16_t c)
     {
-      if (std::is_same<T, CRGB>::value) {
-              // if CRGB provided, cast to 16bit color format.
-              textcolor = textbgcolor = CRGB_to_color565(c);
-      } 
-      else
-      {
-          textcolor = textbgcolor = c; // 16 bit, legacy adafruit
-      }
+      textcolor = textbgcolor = c;
+      textColorIsRgb = false;
+    }
 
+    void setTextColor(CRGB c)
+    {
+      textcolor_rgb = textbgcolor_rgb = c;
+      textColorIsRgb = true;
     }
 
     /**********************************************************************/
     /*!
       @brief   Set text font color with custom background color
-      @param   c   16-bit 5-6-5 Color to draw text with
-      @param   bg  16-bit 5-6-5 Color to draw background/fill with
+      @param   c   RGB565 or CRGB foreground color
+      @param   bg  RGB565 or CRGB background color
     */
     /**********************************************************************/
-    template<typename T>    
-    void setTextColor(T c, T bg) 
+    void setTextColor(uint16_t c, uint16_t bg)
     {
-      if (std::is_same<T, CRGB>::value) {
-              textcolor   = CRGB_to_color565(c);    // From parent class
-              textbgcolor = CRGB_to_color565(bg);
-      } 
-      else
-      {
-        textcolor = c;
-        textbgcolor = bg;
-      }
+      textcolor = c;
+      textbgcolor = bg;
+      textColorIsRgb = false;
+    }
+
+    void setTextColor(CRGB c, CRGB bg)
+    {
+      textcolor_rgb = c;
+      textbgcolor_rgb = bg;
+      textColorIsRgb = true;
     }
 
     /**********************************************************************/
@@ -276,16 +280,19 @@ class GFX : public Print
     */
     /************************************************************************/
     inline CRGB blendColors(CRGB a, CRGB b, uint8_t alpha) const __attribute__((always_inline)) {
-      uint8_t inv_alpha = 255 - alpha;
+      uint16_t inv_alpha = 255U - alpha;
       return CRGB(
-        (a.r * inv_alpha + b.r * alpha) >> 8,
-        (a.g * inv_alpha + b.g * alpha) >> 8,
-        (a.b * inv_alpha + b.b * alpha) >> 8
+        (static_cast<uint32_t>(a.r) * inv_alpha + static_cast<uint32_t>(b.r) * alpha + 127U) / 255U,
+        (static_cast<uint32_t>(a.g) * inv_alpha + static_cast<uint32_t>(b.g) * alpha + 127U) / 255U,
+        (static_cast<uint32_t>(a.b) * inv_alpha + static_cast<uint32_t>(b.b) * alpha + 127U) / 255U
       );
     }
 
 
   protected:
+    template<typename Color>
+    void drawCharImpl(int16_t x, int16_t y, unsigned char c, Color color,
+                      Color bg, uint8_t size_x, uint8_t size_y);
     void charBounds(unsigned char c, int16_t *x, int16_t *y, int16_t *minx,
                     int16_t *miny, int16_t *maxx, int16_t *maxy);
     int16_t WIDTH;        ///< This is the 'raw' display width - never changes
@@ -297,6 +304,9 @@ class GFX : public Print
 
     uint16_t textcolor;   ///< 16-bit background color for print()
     uint16_t textbgcolor; ///< 16-bit text color for print()
+    CRGB textcolor_rgb;   ///< 24-bit foreground color used by print()
+    CRGB textbgcolor_rgb; ///< 24-bit background color used by print()
+    bool textColorIsRgb;  ///< Selects the active text-color representation
 
     uint8_t textsize_x;   ///< Desired magnification in X-axis of text to print()
     uint8_t textsize_y;   ///< Desired magnification in Y-axis of text to print()
