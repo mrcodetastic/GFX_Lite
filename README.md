@@ -58,9 +58,9 @@ void loop() {}
 
 ## Optional layers
 
-Include `GFX_Layer.hpp` to use a non-copyable RAII-owned CRGB framebuffer. Each layer stores one contiguous RGB array and one 8-bit opacity value for the whole layer. Layers are fully opaque by default; use `setAlpha()` to change a layer's opacity, or `setColorKey()` for hard per-pixel transparency based on a matching color. A color key makes every matching color transparent, so choose a key color that is not needed as a visible pixel.
+Include `GFX_Layer.hpp` to use a CRGB framebuffer. Each layer stores one contiguous RGB array and one 8-bit opacity value for the whole layer. Layers are fully opaque by default; use `setAlpha()` to change a layer's opacity, or `setColorKey()` for hard per-pixel transparency based on a matching color. A color key makes every matching color transparent, so choose a key color that is not needed as a visible pixel.
 
-Composition writes the foreground over the background into a destination layer. It uses ordinary alpha blending: `setAlpha(0)` leaves the background unchanged, and `setAlpha(255)` replaces it with the foreground wherever it is not transparent. There are no selectable blend effects. `compositeMasked()` also lets a mask's brightness reduce the foreground opacity. Present pixels only when needed by passing a sink to `present()`; the sink receives x, y, and RGB color:
+Composition writes the foreground over the background into a destination layer. It uses ordinary alpha blending: `setAlpha(0)` leaves the background unchanged, and `setAlpha(255)` replaces it with the foreground wherever it is not transparent. Present pixels only when needed by passing a sink to `present()`; the sink receives x, y, and RGB color:
 
 ```cpp
 GFX_Layer background(64, 32), foreground(64, 32), result(64, 32);
@@ -76,10 +76,6 @@ result.present([](int16_t x, int16_t y, CRGB color) {
 });
 ```
 
-Layer storage is limited to 1 MiB by default; set `GFX_LITE_MAX_LAYER_MEMORY` before including the header to change the cap. The cap applies to RGB pixel storage; per-layer opacity adds no per-pixel memory. Check `isInitialized()` after construction. Copying layers is disabled to prevent accidental buffer aliasing/double-free. `drawPixelUnsafe()` intentionally skips bounds and initialization checks.
-
-The core's cooperative-yield hook is a no-op by default. Define `GFX_LITE_YIELD()` before including `GFX_Lite.h` if a platform needs to yield periodically while drawing.
-
 ## Installation and compatibility
 
-Install this repository in the Arduino libraries directory and include `GFX_Lite.h`. The project keeps Adafruit_GFX and FastLED-derived notices in [`LICENSE`](LICENSE). Because the implementation uses Arduino `Print`/font APIs and compiler attributes, check the target toolchain rather than assuming every architecture listed by a package manager is supported.
+Install this repository in an Arduino libraries directory (i.e. download a zip of this repo) and include `GFX_Lite.h`.
