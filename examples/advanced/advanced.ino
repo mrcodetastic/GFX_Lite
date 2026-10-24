@@ -51,8 +51,10 @@ void setup() {
         return;
     }
 
-    foreground_layer.setColorKey(CRGB::Black);
-    foreground_layer.clear(CRGB::Black);
+    // Wrap HTMLColorCode enumerators in CRGB explicitly so the 24-bit CRGB
+    // path is always used, even if a uint16_t (RGB565) overload is added.
+    foreground_layer.setColorKey(CRGB(CRGB::Black));
+    foreground_layer.clear(CRGB(CRGB::Black));
     effect_layer.setAlpha(200);
 
     // Print memory usage information[cite: 1]
@@ -107,7 +109,7 @@ void animatePixelEffect() {
 
 void animateScrollingText() {
     // Clear foreground layer completely to prevent ghosting/artifacts
-    foreground_layer.clear(CRGB::Black);
+    foreground_layer.clear(CRGB(CRGB::Black));
     
     // Draw scrolling text single-line safely
     static int text_x = PANEL_RES_X;

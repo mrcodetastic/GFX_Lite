@@ -22,8 +22,12 @@ Canvas canvas;
 CRGBPalette16 palette = RainbowColors_p;
 
 void setup() {
-  canvas.fillScreen(CRGB::Black);
-  canvas.setTextColor(CRGB::White);
+  // Wrap HTMLColorCode enumerators in CRGB explicitly. GFX also exposes
+  // uint16_t (RGB565) overloads, and the compiler prefers the standard
+  // enum -> uint16_t conversion over the user-defined enum -> CRGB one,
+  // which would silently truncate the 24-bit colour.
+  canvas.fillScreen(CRGB(CRGB::Black));
+  canvas.setTextColor(CRGB(CRGB::White));
   canvas.setCursor(0, 10);
   canvas.print("GFX_Lite");
 

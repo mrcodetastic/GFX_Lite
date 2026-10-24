@@ -12,7 +12,34 @@
 #define GFX_LITE_MAX_LAYER_MEMORY (1024UL * 1024UL)
 #endif
 
+// Compile-time option: place GFX_Layer pixel buffers in ESP32 PSRAM instead of
+// internal SRAM. Enable with -DGFX_LAYER_PSRAM=1 (e.g. build_flags in
+// platformio.ini). Ignored on non-ESP32 targets, where SRAM is always used.
+// Note: GFX_LITE_MAX_LAYER_MEMORY still caps the maximum layer size; raise it
+// as well if you want layers larger than 1 MiB in PSRAM.
+#ifndef GFX_LAYER_PSRAM
+#define GFX_LAYER_PSRAM 0
+#endif
+
+#if GFX_LAYER_PSRAM && (defined(ESP32) || defined(ARDUINO_ARCH_ESP32))
+#define GFX_LITE_LAYER_USE_PSRAM 1
+#include <esp_heap_caps.h>
+#else
+#define GFX_LITE_LAYER_USE_PSRAM 0
+#endif
+
 enum textPosition { TOP, MIDDLE, BOTTOM };
+
+/** Frees a pixel buffer obtained from GFX_Layer::allocatePixels(). */
+struct GFX_LayerPixelDeleter {
+    void operator()(CRGB* pixels) const {
+#if GFX_LITE_LAYER_USE_PSRAM
+        if (pixels) heap_caps_free(pixels);
+#else
+        delete[] pixels;
+#endif
+    }
+};
 
 /** A drawable, in-memory CRGB framebuffer with per-layer opacity. */
 class GFX_Layer : public GFX {
@@ -90,14 +117,17 @@ public:
     size_t getMemoryUsage() const;
 
 private:
+    using PixelBuffer = std::unique_ptr<CRGB[], GFX_LayerPixelDeleter>;
+
     static uint64_t requiredBytes(uint16_t width, uint16_t height);
+    static CRGB* allocatePixels(size_t count);
     size_t pixelCount() const;
     size_t pixelIndex(int16_t x, int16_t y) const;
     size_t rawPixelIndex(uint16_t x, uint16_t y) const;
     void invalidateDimensions();
     void copyPixel(size_t source, size_t destination);
 
-    std::unique_ptr<CRGB[]> _pixels;
+    PixelBuffer _pixels;
     uint8_t _alpha;
     CRGB _color_key;
     TransparencyMode _transparency_mode;

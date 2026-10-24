@@ -76,6 +76,23 @@ result.present([](int16_t x, int16_t y, CRGB color) {
 });
 ```
 
+### Allocating layer buffers in PSRAM (ESP32)
+
+By default `GFX_Layer` allocates its pixel buffer from internal SRAM. On ESP32 targets you can move those buffers into PSRAM with the compile-time option `GFX_LAYER_PSRAM`:
+
+```ini
+; platformio.ini
+build_flags = -DGFX_LAYER_PSRAM=1
+```
+
+When enabled, the layer buffer (and the temporary scratch buffer used by `blur()`) is allocated with `heap_caps_malloc(..., MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)`. If PSRAM is unavailable or exhausted, allocation falls back to internal RAM automatically. The option is ignored on non-ESP32 targets, which always use SRAM.
+
+`GFX_LITE_MAX_LAYER_MEMORY` still caps the maximum layer size (1 MiB by default), so raise it as well if you want larger PSRAM-backed layers:
+
+```ini
+build_flags = -DGFX_LAYER_PSRAM=1 -DGFX_LITE_MAX_LAYER_MEMORY=4194304UL
+```
+
 ## Installation and compatibility
 
 Install this repository in an Arduino libraries directory (i.e. download a zip of this repo) and include `GFX_Lite.h`.

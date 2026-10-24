@@ -38,12 +38,30 @@ GFX_Layer::GFX_Layer(uint16_t layer_width, uint16_t layer_height)
     }
 
     const size_t count = static_cast<size_t>(layer_width) * layer_height;
-    _pixels.reset(new (std::nothrow) CRGB[count]);
+    _pixels.reset(allocatePixels(count));
     if (!_pixels) {
         invalidateDimensions();
         return;
     }
     for (size_t i = 0; i < count; ++i) _pixels[i] = CRGB::Black;
+}
+
+CRGB* GFX_Layer::allocatePixels(size_t count) {
+    if (count == 0) return nullptr;
+    const size_t bytes = count * sizeof(CRGB);
+#if GFX_LITE_LAYER_USE_PSRAM
+    // Prefer external PSRAM; fall back to internal RAM if PSRAM is absent or
+    // exhausted. Both paths use heap_caps_* so GFX_LayerPixelDeleter can
+    // release either.
+    CRGB* pixels = static_cast<CRGB*>(
+        heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!pixels) {
+        pixels = static_cast<CRGB*>(heap_caps_malloc(bytes, MALLOC_CAP_8BIT));
+    }
+    return pixels;
+#else
+    return new (std::nothrow) CRGB[count];
+#endif
 }
 
 uint64_t GFX_Layer::requiredBytes(uint16_t layer_width, uint16_t layer_height) {
@@ -316,7 +334,7 @@ void GFX_Layer::adjustBrightness(uint8_t scale) {
 void GFX_Layer::blur(uint8_t blur_amount) {
     if (!isInitialized() || blur_amount == 0) return;
     const size_t count = pixelCount();
-    std::unique_ptr<CRGB[]> source(new (std::nothrow) CRGB[count]);
+    PixelBuffer source(allocatePixels(count));
     if (!source) return;
     for (size_t i = 0; i < count; ++i) source[i] = _pixels[i];
     for (int32_t y = 0; y < GFX::HEIGHT; ++y) {
