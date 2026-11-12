@@ -1132,7 +1132,7 @@ void GFX::drawCharImpl(int16_t x, int16_t y, unsigned char c, Color color, Color
     }
     if (bg != color) { // If opaque, draw vertical line for last column
       if (size_x == 1 && size_y == 1)
-        fillRect(x + 5, y, 8, 1, bg);
+        fillRect(x + 5, y, 1, 8, bg);
       else
         fillRect(x + 5 * size_x, y, size_x, 8 * size_y, bg);
     }
